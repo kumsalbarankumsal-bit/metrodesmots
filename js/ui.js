@@ -123,19 +123,19 @@ function renderHome() {
   $('#v-home').innerHTML = `
   <div class="hello">
     <div><div class="tricolore" aria-hidden="true"><i></i><i></i><i></i></div>
-      <h1>Bonjour, <em>Baran</em>.</h1>
+      <h1>${new Date().getHours() >= 18 || new Date().getHours() < 5 ? 'Bonsoir' : 'Bonjour'}, <em>voyageur</em>.</h1>
       <p class="sub">${date} · Thème 1 · Identités</p></div>
   </div>
   ${welcome}
   <div class="hero-act">
     <div class="act review">
-      <span class="label">Tekrar · Réviser</span>
+      <span class="label">Tekrar · <span lang="fr">Réviser</span></span>
       <div class="row" style="align-items:flex-end;gap:14px"><span class="bigno tnum">${due}</span><span class="what" style="padding-bottom:6px">${due ? 'kelime hazır' : ''}</span></div>
       <p class="what">${reviewTxt}</p>
       <div>${reviewBtn}</div>
     </div>
     <div class="act discover u${ns.u}">
-      <span class="label">Yeni kelimeler · Découvrir</span>
+      <span class="label">Yeni kelimeler · <span lang="fr">Découvrir</span></span>
       <div class="ringrow">
         <div class="ring" style="width:92px;height:92px">${ring(goalP, 92, 10, 'var(--uc)')}<div class="rc"><span><b class="tnum">${td[1]}</b><small>/ ${goal} bugün</small></span></div></div>
         <div class="stack" style="gap:6px;min-width:0">
@@ -217,7 +217,7 @@ function renderPlan() {
       <div class="plan-head">
         <span class="roundel lg">${u}</span>
         <div style="min-width:0;flex:1">
-          <div class="them">Thème 1 · Identités · Unité ${u}</div>
+          <div class="them" lang="fr">Thème 1 · Identités · Unité ${u}</div>
           <h1>${esc(UNITS[u])}</h1>
           <p class="muted" style="margin-top:4px">${esc(UNIT_TR[u])}</p>
         </div>
@@ -283,7 +283,7 @@ function renderReview() {
   for (const k in S.w) { const s = S.w[k][0]; if (s >= 0 && s <= 5) sc[s]++; }
   const learning = W.filter(w => status(w.id) === 'learn');
   const nextDue = learning.length ? Math.min(...learning.map(w => S.w[w.id][1])) : null;
-  const sizes = [10, 20, 50, 0].map(n => `<button data-size="${n}" aria-pressed="${S.p.sessSize === n}">${n || 'Tümü'}</button>`).join('');
+  const sizes = [0, 10, 20, 50].map(n => `<button data-size="${n}" aria-pressed="${S.p.sessSize === n}">${n || 'Kesintisiz'}</button>`).join('');
   const rungs = STAGE_TR.map((t, i) => `<div class="rung"><b class="tnum">${sc[i]}</b><span>${i + 1}. tekrar</span><span>${t} sonra</span></div>`).join('')
     + `<div class="rung m"><b class="tnum">${sc[5]}</b><span>Ustalaşıldı</span><span>uzun süreli</span></div>`;
   const ex = [1, 2, 3, 4].map(u => `<button class="btn sm ghost u${u}" data-exam="${u}"><span class="roundel" style="width:26px;height:26px;font-size:.8rem;box-shadow:none">${u}</span>Hat ${u}</button>`).join('');
@@ -316,7 +316,7 @@ function renderLex() {
   const schips = [['all', 'Hepsi'], ['new', 'Yeni'], ['learn', 'Öğreniliyor'], ['master', 'Ustalaşıldı'], ['known', 'Biliyordum'], ['hard', 'Zorlu'], ['fav', 'Yıldızlı'], ['fix', 'Kitaptan düzeltilen']]
     .map(([k, t]) => `<button class="fchip" data-lexs="${k}" aria-pressed="${LEX.s === k}">${t}</button>`).join('');
   $('#v-lex').innerHTML = `
-    <div class="card-h" style="margin-bottom:12px"><h2 class="serif" style="font-size:2rem">Sözlük</h2><span class="label">Lexique · 1793 kelime</span></div>
+    <div class="card-h" style="margin-bottom:12px"><h2 class="serif" style="font-size:2rem">Sözlük</h2><span class="label"><span lang="fr">Lexique</span> · 1793 kelime</span></div>
     <div class="search">${IC('search')}<input id="lexq" type="search" placeholder="Fransızca, Türkçe ya da tanım ara…" value="${esc(LEX.q)}" autocomplete="off" spellcheck="false" aria-label="Sözlükte ara"></div>
     <div class="filters" role="group" aria-label="Hat">${uchips}</div>
     <div class="filters" role="group" aria-label="Durum" style="margin-top:-4px">${schips}</div>
@@ -358,9 +358,10 @@ function startReview(words, title) {
   const n = S.p.sessSize || words.length;
   newSession('review', words.slice(0, n), title || 'Tekrar');
 }
-function startPractice(words, title, max) {
+function startPractice(words, title, max, endless) {
   if (!words.length) { toast('Pratik için kelime yok'); return; }
   newSession('practice', shuffle(words.slice()).slice(0, max || 20), title || 'Pratik');
+  if (endless) SES.pool = words.slice();
 }
 function discoverNext(count) {
   const ns = nextStation(S.p.plan); if (!ns) { toast('Bütün kelimeleri keşfettin. Bravo!'); return; }
@@ -375,6 +376,7 @@ function discoverNext(count) {
   startDiscover(out, 'Keşif · Ligne ' + ns.u);
 }
 function curItem() { return SES.items[SES.idx]; }
+function flowing() { return SES.kind === 'discover' || (SES.kind === 'review' && !S.p.sessSize) || (SES.kind === 'practice' && !!SES.pool); }
 function stageDots(id) {
   const st = stageOf(id); const k = st === 9 ? 5 : Math.max(0, Math.min(5, st));
   return `<span class="stage" title="Basamak ${k}/5">${[0, 1, 2, 3, 4].map(i => `<i class="${i < k ? 'on' : ''}"></i>`).join('')}</span>`;
@@ -391,12 +393,13 @@ function wordInfo(w) {
   </div>`;
 }
 function sessHeader(w) {
-  const total = SES.items.length, done = SES.idx + (SES.answered || SES.phase === 'learned' ? 1 : 0);
+  const total = SES.items.length, done0 = SES.idx + (SES.answered || SES.phase === 'learned' ? 1 : 0);
+  const batch = SES.kind === 'discover' ? 10 : 20, done = flowing() ? (done0 % batch || (done0 ? batch : 0)) : done0, ptotal = flowing() ? batch : total;
   const kindTR = { discover: 'Keşif', review: 'Tekrar', practice: 'Pratik' }[SES.kind];
   return `<div class="sess-top">
       <button class="iconbtn" data-endsess aria-label="Oturumu bitir">${IC('x')}</button>
-      <div class="prog" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><span style="width:${(done / total * 100).toFixed(1)}%"></span></div>
-      <span class="count tnum">${Math.min(SES.idx + 1, total)} / ${total}</span></div>
+      <div class="prog" role="progressbar" aria-valuemin="0" aria-valuemax="${ptotal}" aria-valuenow="${done}"><span style="width:${(done / ptotal * 100).toFixed(1)}%"></span></div>
+      <span class="count tnum">${flowing() ? (SES.idx + 1) + ' · akış' : Math.min(SES.idx + 1, total) + ' / ' + total}</span></div>
     <div class="sess-mode"><span class="pill ${SES.kind === 'review' ? 'learn' : SES.kind === 'discover' ? 'known' : ''}">${kindTR}</span>
       <span class="roundel" style="width:28px;height:28px;font-size:.82rem">${w.u}</span>
       <span class="faint" style="font-weight:700">Ligne ${w.u} · Durak ${w.g} · ${esc(stationName(w.u, w.g))}</span>
@@ -431,7 +434,7 @@ function discoverCard(w) {
   return `
     <div class="ticket" id="tk">${top}${wordInfo(w)}
       <p class="faint" style="margin-top:16px;font-weight:700">${SES.lastDec === 'known' ? 'Biliyordum olarak işaretlendi. İstersen sözlükten öğrenme listene alabilirsin.' : 'Öğrenme listene eklendi · ilk tekrar yarın.'}</p></div>
-    <div class="sess-actions"><button class="btn uc" data-next>${SES.idx + 1 >= SES.items.length ? 'Özeti gör' : 'Sonraki kelime'}${IC('arrow')}</button></div>
+    <div class="sess-actions"><button class="btn uc" data-next>${SES.idx + 1 >= SES.items.length && !flowing() ? 'Özeti gör' : 'Sonraki kelime'}${IC('arrow')}</button></div>
     <p class="kbd">Enter: devam</p>`;
 }
 function decide(kind) {
@@ -467,7 +470,7 @@ function questionCard(q) {
       <div class="tk-top"><span class="tk-no">${QTYPES_TR[q.type]}</span>${review ? stageDots(w.id) : ''}</div>
       ${prompt}${body}${SES.answered ? feedbackHTML() : ''}
     </div>
-    ${SES.answered ? `<div class="sess-actions">${SES.canOverride ? `<button class="btn ghost" data-override>${IC('check')}Aslında doğru yazdım</button>` : ''}<button class="btn uc" data-next>${SES.idx + 1 >= SES.items.length ? 'Özeti gör' : 'Devam'}${IC('arrow')}</button></div><p class="kbd">Enter: devam</p>`
+    ${SES.answered ? `<div class="sess-actions">${SES.canOverride ? `<button class="btn ghost" data-override>${IC('check')}Aslında doğru yazdım</button>` : ''}<button class="btn uc" data-next>${SES.idx + 1 >= SES.items.length && !flowing() ? 'Özeti gör' : 'Devam'}${IC('arrow')}</button></div><p class="kbd">Enter: devam</p>`
                    : `<p class="kbd">${q.type === 'type' ? 'Enter: kontrol et' : 'Klavyede 1–4 ile seçebilirsin'}</p>`}`;
 }
 function feedbackHTML() {
@@ -532,8 +535,29 @@ function nextItem() {
   if (SES.kind === 'discover' && SES.phase !== 'learned') return;
   if (SES.kind !== 'discover' && !SES.answered) return;
   SES.idx++; SES.phase = 'front'; SES.q = null; SES.answered = false; SES.typedState = null; SES.canOverride = false;
-  if (SES.idx >= SES.items.length) { endSession(); return; }
+  if (SES.idx >= SES.items.length && !refill()) { endSession(); return; }
   renderSess();
+}
+/* Akış: liste bitince oturumu kesmeden sıradakileri ekle; yalnızca ✕ ile durulur */
+function refill() {
+  const s = SES, inSes = new Set(s.items.map(x => x.w.id));
+  let add = [];
+  if (s.kind === 'discover') {
+    const last = s.items[s.items.length - 1].w;
+    for (const u of [last.u, ...UNIT_IDS.filter(x => x !== last.u)]) {
+      for (let g = (u === last.u ? last.g : 1); g <= NGROUPS[u] && add.length < 10; g++)
+        for (const w of GROUPS[u + '-' + g]) if (add.length < 10 && status(w.id) === 'new' && !inSes.has(w.id)) add.push(w);
+      if (add.length >= 10) break;
+    }
+  } else if (s.kind === 'review' && !S.p.sessSize) {
+    add = dueList().filter(w => !inSes.has(w.id)).slice(0, 20);
+  } else if (s.kind === 'practice' && s.pool) {
+    add = shuffle(s.pool.filter(w => s.pool.length <= 20 || !s.items.slice(-20).some(x => x.w === w))).slice(0, 20);
+  }
+  if (!add.length) return false;
+  s.items.push(...add.map(w => ({ w, retry: false })));
+  if (s.kind === 'discover') toast(`Akış sürüyor · bugün ${today()[1]} yeni kelime`);
+  return true;
 }
 function endSession() {
   const s = SES; if (!s) return;
@@ -685,7 +709,7 @@ function openStation(u, g) {
 function openSettings() {
   const seg = (name, cur, opts) => `<div class="seg" role="group">${opts.map(([v, t]) => `<button data-set="${name}" data-val="${v}" aria-pressed="${String(cur) === String(v)}">${t}</button>`).join('')}</div>`;
   const tog = (name, on) => `<button class="toggle" role="switch" aria-checked="${!!on}" data-tog="${name}" aria-label="${name}"></button>`;
-  openSheet(`${sheetHead('Réglages', 'Ayarlar')}
+  openSheet(`${sheetHead('<span lang="fr">Réglages</span>', 'Ayarlar')}
     <div class="set-row"><div><div class="t">Görünüm</div><div class="d">Gece modu, sabah erken ya da akşam çalışırken gözü yormaz.</div></div>${seg('night', S.p.night ? 1 : 0, [[0, 'Gündüz'], [1, 'Gece']])}</div>
     <div class="set-row"><div><div class="t">Yazı boyutu</div><div class="d">Bütün metinleri birlikte büyütür.</div></div>${seg('fs', S.p.fs, [[1, 'A'], [1.12, 'A+'], [1.25, 'A++']])}</div>
     <div class="set-row"><div><div class="t">Günlük yeni kelime hedefi</div><div class="d">Keşifte listene eklediğin kelimeler sayılır.</div></div>${seg('goal', S.p.goal, [[5, '5'], [10, '10'], [15, '15'], [20, '20'], [30, '30']])}</div>
@@ -781,8 +805,8 @@ function runAction(a) {
   else if (a === 'discover-next') { const left = Math.max(0, S.p.goal - today()[1]); discoverNext(left > 0 ? left : 10); }
   else if (a === 'discover-line') { const u = S.p.plan || 1; const ws = UNIT_WORDS[u].filter(w => status(w.id) === 'new').slice(0, Math.max(5, S.p.goal - today()[1]) || 10); startDiscover(ws, 'Keşif · Ligne ' + u); }
   else if (a === 'review-line') { const u = S.p.plan || 1; startReview(dueList().filter(w => w.u === u), 'Tekrar · Ligne ' + u); }
-  else if (a === 'practice-hard') startPractice(W.filter(w => isHard(w.id)), 'Zorlu kelimeler', 20);
-  else if (a === 'practice-learning') startPractice(W.filter(w => ['learn', 'master'].includes(status(w.id))), 'Serbest pratik', 20);
+  else if (a === 'practice-hard') startPractice(W.filter(w => isHard(w.id)), 'Zorlu kelimeler', 20, true);
+  else if (a === 'practice-learning') startPractice(W.filter(w => ['learn', 'master'].includes(status(w.id))), 'Serbest pratik', 20, true);
 }
 function bind() {
   document.addEventListener('click', e => {

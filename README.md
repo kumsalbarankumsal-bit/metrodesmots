@@ -32,4 +32,3 @@ js/ui.js       ekranlar ve etkileşim
 
 Framework preset: **Other**, build komutu yok, output directory: kök (`.`).
 
-— Baranca

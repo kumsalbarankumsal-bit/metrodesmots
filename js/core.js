@@ -47,12 +47,13 @@ W.forEach(w => { w.key = normT(w.fr + ' ' + w.tr + ' ' + w.def); w.brackets = (w
 
 /* ---------- durum ---------- */
 const DEF_P = { xp: 0, streak: 0, last: '', days: {}, goal: 10, goalDay: '', night: false, fs: 1, auto: true, sfx: false,
-                rate: 0.92, match: {}, sessSize: 20, matchMode: 'def', plan: 1, lvlSeen: 0 };
+                rate: 0.92, match: {}, sessSize: 0, flowV: 1, matchMode: 'def', plan: 1, lvlSeen: 0 };
 let S = { v: 1, t: 0, w: {}, f: {}, p: JSON.parse(JSON.stringify(DEF_P)) };
 function normalizeState(x) {
   const o = { v: 1, t: +x?.t || 0, w: (x && typeof x.w === 'object' && x.w) || {}, f: (x && typeof x.f === 'object' && x.f) || {},
               p: Object.assign(JSON.parse(JSON.stringify(DEF_P)), (x && x.p) || {}) };
   for (const k in o.w) { if (!BYID[k] || !Array.isArray(o.w[k])) delete o.w[k]; }
+  if (o.p.flowV !== 1) { o.p.sessSize = 0; o.p.flowV = 1; }
   return o;
 }
 
