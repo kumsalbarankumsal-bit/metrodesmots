@@ -22,6 +22,7 @@
   "shortcuts": [
     { "name": "Tekrar", "url": "/#review", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Hat haritası", "url": "/#plan", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Sınav modu", "url": "/#exam", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Sözlük", "url": "/#lex", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
   ]
 }

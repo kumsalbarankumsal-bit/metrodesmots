@@ -31,18 +31,18 @@ function ring(p, size, stroke, color) {
 
 /* ---------- yönlendirme ---------- */
 function show(v) {
-  PREV = ['home', 'plan', 'review', 'lex'].includes(VIEW) ? VIEW : PREV;
+  PREV = ['home', 'plan', 'review', 'lex', 'exam'].includes(VIEW) ? VIEW : PREV;
   VIEW = v;
-  ['home', 'plan', 'review', 'lex', 'sess', 'match', 'sum'].forEach(k => { $('#v-' + k).hidden = k !== v; });
-  const tab = ['home', 'plan', 'review', 'lex'].includes(v) ? v : null;
+  ['home', 'plan', 'review', 'lex', 'exam', 'sess', 'match', 'sum', 'examrun'].forEach(k => { $('#v-' + k).hidden = k !== v; });
+  const tab = ['home', 'plan', 'review', 'lex', 'exam'].includes(v) ? v : (v === 'examrun' ? 'exam' : null);
   $$('[data-go]').forEach(b => { if (b.dataset.go === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
-  document.body.classList.toggle('in-sess', v === 'sess' || v === 'match');
-  if (v === 'home') renderHome(); else if (v === 'plan') renderPlan(); else if (v === 'review') renderReview(); else if (v === 'lex') renderLex();
+  document.body.classList.toggle('in-sess', v === 'sess' || v === 'match' || v === 'examrun');
+  if (v === 'home') renderHome(); else if (v === 'plan') renderPlan(); else if (v === 'review') renderReview(); else if (v === 'lex') renderLex(); else if (v === 'exam') renderExam();
   if (v !== 'match') stopMatchTimer();
   updateChrome();
   try { window.scrollTo({ top: 0, behavior: 'instant' }); } catch (e) { window.scrollTo(0, 0); }
 }
-function rerender() { applyPrefs(); if (['home', 'plan', 'review', 'lex'].includes(VIEW)) show(VIEW); else updateChrome(); }
+function rerender() { applyPrefs(); if (['home', 'plan', 'review', 'lex', 'exam'].includes(VIEW)) show(VIEW); else updateChrome(); }
 function updateChrome() {
   const n = dueList().length;
   $$('[data-due]').forEach(b => { b.textContent = n > 99 ? '99+' : n; b.hidden = n === 0; });

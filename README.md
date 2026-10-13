@@ -8,6 +8,10 @@ IB Français B · Thème 1 « Identités » kelime kitabındaki **1793 kelime** 
 - Kitaptaki 41 dizgi / cevap anahtarı hatası düzeltildi (uygulamada Ayarlar → Kitap düzeltmeleri).
 - XP ile 20. arrondissement'tan Louvre'a ilerleme, seri, günlük hedef, gece modu, yazı boyutu ayarı.
 
+## Sınav modu
+
+Seçilen kapsam (bütün kitap, bir hat ya da durak aralığı) kitap sırasıyla kesintisiz öğretilir. Her 20/25/30 kelimede aynı kelimelerden kontrol testi gelir; yanlışlar doğru bilinene kadar testin sonunda yeniden sorulur. Her 3 partide bir önceki partilerden karma tekrar, kapsam sonunda zayıf kelimelere ağırlık veren final sınavı vardır. Durum kaydedilir, kaldığın yerden devam edilir.
+
 ## Yapı
 
 Derleme adımı yok; düz statik site.
@@ -20,6 +24,7 @@ vercel.json    sw.js için önbellek başlıkları
 js/data.js     1793 kelime (id, ünite, grup, fr, tanım, zıt, tr, örnek, örnek_tr) + düzeltmeler
 js/core.js     veri modeli, aralıklı tekrar, seviye, kayıt, telaffuz, soru üretimi
 js/ui.js       ekranlar ve etkileşim
+js/exam.js     sınav modu
 ```
 
 İlerleme tarayıcının `localStorage`'ında (`metro-des-mots-v1`) tutulur; her cihaz/tarayıcı kendi ilerlemesini saklar.
