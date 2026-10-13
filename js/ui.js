@@ -693,6 +693,7 @@ function openSettings() {
     <div class="set-row"><div><div class="t">Konuşma hızı</div></div>${seg('rate', S.p.rate, [[0.75, 'Yavaş'], [0.92, 'Normal'], [1.05, 'Hızlı']])}</div>
     <div class="set-row"><div><div class="t">Ses efektleri</div><div class="d">Doğru ve yanlış cevapta kısa bir ton.</div></div>${tog('sfx', S.p.sfx)}</div>
     <div class="set-row"><div><div class="t">Kayıt</div><div class="d">${SYNC.mode === 'cloud' ? 'İlerlemen hesabına kaydediliyor; tablet, telefon ve bilgisayarda aynı kalır.' : 'İlerlemen bu tarayıcıda tutuluyor. Claude hesabına giriş yapmış olarak açtığında cihazlar arası eşitlenir.'}</div></div><span class="sync ${SYNC.mode === 'cloud' ? 'cloud' : ''}"></span></div>
+    ${STANDALONE ? '' : `<div class="set-row"><div><div class="t">Uygulama olarak yükle</div><div class="d">Ana ekranına ikon olarak ekler; tam ekran ve çevrimdışı çalışır.</div></div><button class="btn sm" data-install>Yükle</button></div>`}
     <div class="set-row"><div><div class="t">Kitap düzeltmeleri</div><div class="d">PDF'teki dizgi ve cevap anahtarı hatalarından düzelttiğim ${Object.keys(FIXES).length} madde.</div></div><button class="btn ghost sm" data-info="fixes">Listeyi gör</button></div>
     <div class="set-row"><div><div class="t">Tekrar sistemi</div><div class="d">Basamakların ve soru tiplerinin nasıl işlediği.</div></div><button class="btn ghost sm" data-info="how">Açıklama</button></div>
     <div class="danger" id="dangerZone"><div class="row"><div style="flex:1;min-width:200px"><div class="t" style="font-weight:800">İlerlemeyi sıfırla</div><div class="d faint" style="font-size:.86rem">Bütün kelime durumları, XP, seri ve rekorlar silinir.</div></div><button class="btn sm no" data-reset1>Sıfırla…</button></div></div>`);
@@ -790,6 +791,7 @@ function bind() {
     if (d.go) { closeSheet(); show(d.go); return; }
     if (t.id === 'brand') { show('home'); return; }
     if (t.id === 'btnSettings') { openSettings(); return; }
+    if (t.id === 'btnInstall' || 'install' in d) { closeSheet(); doInstall(); return; }
     if ('close' in d) { closeSheet(); return; }
     if (d.run) { closeSheet(); runAction(d.run); return; }
     if (d.info) { openInfo(d.info); return; }
@@ -865,6 +867,18 @@ function bind() {
   window.addEventListener('pagehide', () => flush());
 }
 function refreshUnder() { if (['home', 'plan', 'review'].includes(VIEW)) show(VIEW); else if (VIEW === 'lex') renderLexList(); updateChrome(); }
+
+/* ---------- yükleme (PWA) ---------- */
+let INSTALL = null;
+const STANDALONE = (typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); INSTALL = e; const b = $('#btnInstall'); if (b) b.hidden = false; });
+window.addEventListener('appinstalled', () => { INSTALL = null; const b = $('#btnInstall'); if (b) b.hidden = true; toast('Métro des Mots ana ekranına eklendi'); });
+async function doInstall() {
+  if (INSTALL) { INSTALL.prompt(); try { await INSTALL.userChoice; } catch (e) {} INSTALL = null; const b = $('#btnInstall'); if (b) b.hidden = true; return; }
+  openSheet(`${sheetHead('Ana ekrana ekle', 'Uygulamayı yükle')}<div class="stack">
+    <p>Chrome'da sağ üstteki <b>⋮</b> menüsüne dokun ve <b>Uygulamayı yükle</b> (bazı sürümlerde <b>Ana ekrana ekle</b>) seçeneğini seç. Samsung Internet'te alttaki menüden <b>Sayfayı ekle → Ana ekran</b>.</p>
+    <p class="faint">Seçenek görünmüyorsa sayfayı bir kez yenile; Chrome yükleme hazırlığını ilk ziyarette tamamlar.</p></div>`);
+}
 
 /* ---------- açılış ---------- */
 function boot() {
