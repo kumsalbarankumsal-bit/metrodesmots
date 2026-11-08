@@ -9,12 +9,12 @@ const EX_PHASE_TR = { learn: 'Öğren', check: 'Kontrol testi', mix: 'Karma tekr
 
 function exState() { return S.p.exam || null; }
 function exScopeIds(sc) {
-  return W.filter(w => sc.type === 'all' || (w.u === sc.u && (sc.type === 'unit' || (w.g >= sc.g1 && w.g <= sc.g2)))).map(w => w.id);
+  return W.filter(w => sc.type === 'all' ? w.deck === 'th1' : (w.u === sc.u && (sc.type === 'unit' || (w.g >= sc.g1 && w.g <= sc.g2)))).map(w => w.id);
 }
 function exScopeLabel(sc) {
-  if (sc.type === 'all') return 'Bütün kitap · 4 hat';
-  if (sc.type === 'unit') return 'Ligne ' + sc.u + ' · ' + UNITS[sc.u];
-  return 'Ligne ' + sc.u + ' · durak ' + sc.g1 + '–' + sc.g2;
+  if (sc.type === 'all') return 'Bütün kitap · Thème 1';
+  if (sc.type === 'unit') return sc.u === 5 ? '1. Yazılı · 129 kelime' : lineName(sc.u) + ' · ' + UNITS[sc.u];
+  return (sc.u === 5 ? '1. Yazılı' : lineName(sc.u)) + ' · durak ' + sc.g1 + (sc.g2 !== sc.g1 ? '–' + sc.g2 : '');
 }
 function exTick() {
   const E = exState(); if (!E) return;
@@ -28,7 +28,7 @@ function exEta(E) {
 function exFirstPct(E) { return E.st.asked ? Math.round(E.st.firstOk / E.st.asked * 100) : 0; }
 
 /* ---------- kurulum ekranı ---------- */
-const EXSET = { type: 'all', u: 1, g1: 1, g2: 5, size: 25, reveal: true, mix: true, skip: false, confirm: false };
+const EXSET = { type: 'unit', u: 5, g1: 1, g2: 5, size: 25, reveal: true, mix: true, skip: false, confirm: false };
 function renderExam() {
   const E = exState(), v = $('#v-exam');
   const ug = EXSET.u;
@@ -37,7 +37,7 @@ function renderExam() {
   const seg = (k, vals) => `<div class="seg" role="group">${vals.map(([val, t]) => `<button data-exset="${k}" data-val="${val}" aria-pressed="${String(EXSET[k]) === String(val)}">${t}</button>`).join('')}</div>`;
   const resume = E && E.phase !== 'done' ? `
     <div class="card s12 exam-resume">
-      <div class="card-h"><h2>Devam eden sınav</h2><span class="label">${esc(exScopeLabel(E.scope))}</span></div>
+      <div class="card-h"><h2>Devam eden sınav</h2><span class="faint" style="font-weight:800">${esc(exScopeLabel(E.scope))}</span></div>
       <div class="bar" style="height:14px"><span style="width:${(E.pos / E.ids.length * 100).toFixed(1)}%;background:var(--rouge)"></span></div>
       <div class="sum-stats" style="margin:14px 0">
         <div class="stat"><b class="tnum">${E.pos} / ${E.ids.length}</b><span>öğrenilen</span></div>
@@ -49,18 +49,19 @@ function renderExam() {
         ${EXSET.confirm ? `<span class="muted" style="font-weight:800">Bu sınavı silip yenisini mi başlatacaksın?</span><button class="btn sm ghost" data-exgo="cancel">Vazgeç</button><button class="btn sm no" data-exgo="startnew">Evet, yeni başlat</button>` : ''}</div>
     </div>` : '';
   v.innerHTML = `
-    <div class="card-h" style="margin-bottom:6px"><h2 class="serif" style="font-size:2rem">Sınav modu</h2><span class="label"><span lang="fr">Mode examen</span></span></div>
+    <div class="page-h"><h1 class="serif">Sınav maratonu</h1><span class="faint" style="font-weight:700"><span lang="fr">Mode examen</span></span></div>
     <p class="muted" style="max-width:68ch;margin-bottom:16px">Kelimeler kitap sırasıyla, durmadan önüne gelir. Seçtiğin parti boyu dolunca aynı kelimelerden bir kontrol testi gelir; yanlış bildiğin her kelime, doğru bilene kadar testin sonunda yeniden sorulur. Her üç partide bir önceki partilerden karışık bir tekrar gelir, kapsam bitince de zayıf kelimelerine ağırlık veren bir final sınavı. Öğrendiğin kelimeler aralıklı tekrar listene de girer.</p>
     <div class="grid">${resume}
       <div class="card s12">
-        <div class="card-h"><h2>Kapsam</h2><span class="label tnum">${preview.length - skipN} kelime</span></div>
+        <div class="card-h"><h2>Kapsam</h2><span class="faint tnum" style="font-weight:800">${preview.length - skipN} kelime</span></div>
         <div class="filters" style="margin-top:0">
-          <button class="fchip" data-exscope="all" aria-pressed="${EXSET.type === 'all'}">Bütün kitap (1793)</button>
+          <button class="fchip ufc u5" data-exscope="unit" data-u="5" aria-pressed="${EXSET.type === 'unit' && EXSET.u === 5}">1. Yazılı (${UNIT_WORDS[5].length})</button>
+          <button class="fchip" data-exscope="all" aria-pressed="${EXSET.type === 'all'}">Bütün kitap (${DECK_WORDS.th1.length})</button>
           ${UNIT_IDS.map(u => `<button class="fchip ufc u${u}" data-exscope="unit" data-u="${u}" aria-pressed="${EXSET.type === 'unit' && EXSET.u === u}">Hat ${u} (${UNIT_WORDS[u].length})</button>`).join('')}
           <button class="fchip" data-exscope="range" aria-pressed="${EXSET.type === 'range'}">Durak aralığı</button>
         </div>
         ${EXSET.type === 'range' ? `<div class="row ex-range">
-          <label>Hat <select id="exU">${UNIT_IDS.map(u => `<option value="${u}" ${u === ug ? 'selected' : ''}>${u} · ${esc(UNITS[u])}</option>`).join('')}</select></label>
+          <label>Hat <select id="exU">${[5, ...UNIT_IDS].map(u => `<option value="${u}" ${u === ug ? 'selected' : ''}>${lineBadge(u)} · ${esc(u === 5 ? '1. Yazılı' : UNITS[u])}</option>`).join('')}</select></label>
           <label>İlk durak <select id="exG1">${opts(NGROUPS[ug], EXSET.g1)}</select></label>
           <label>Son durak <select id="exG2">${opts(NGROUPS[ug], EXSET.g2)}</select></label></div>` : ''}
         <div class="set-row"><div><div class="t">Parti boyu</div><div class="d">Kaç kelimede bir kontrol testi gelsin.</div></div>${seg('size', [[20, '20'], [25, '25'], [30, '30']])}</div>
@@ -103,10 +104,10 @@ function exRender() {
     const w = BYID[E.ids[E.pos]]; v.className = 'view u' + w.u;
     const inBatch = E.batch.length + 1, size = E.opt.size;
     const showAll = !E.opt.reveal || EXR.revealed;
-    v.innerHTML = exHeader('Öğren', `Parti ${E.st.batches + 1} · ${inBatch}/${size} · Ligne ${w.u} · Durak ${w.g}`) + `
+    v.innerHTML = exHeader('Öğren', `Parti ${E.st.batches + 1} · ${inBatch}/${size} · ${lineName(w.u)} · Durak ${w.g}`) + `
       <div class="ticket" id="tk">
         <div class="tk-top"><span class="tk-no">N° ${w.id} · ${STATUS_TR[status(w.id)]}</span><span class="stage">${Array.from({ length: Math.min(size, 30) }, (_, i) => `<i class="${i < inBatch - 1 ? 'on' : ''}" style="width:7px;height:7px"></i>`).join('')}</span></div>
-        <div class="w-head"><div class="bigword">${esc(w.fr)}</div><button class="speak" data-say="fr" data-id="${w.id}" aria-label="Telaffuzu dinle">${IC('speak')}</button></div>
+        <div class="w-head"><div class="bigword" lang="fr">${esc(w.fr)}</div><button class="speak" data-say="fr" data-id="${w.id}" aria-label="Telaffuzu dinle">${IC('speak')}</button></div>
         ${showAll ? wordInfo(w) : `<div class="exbox" style="margin-top:18px"><div style="min-width:0;flex:1"><div class="fr">${exHTML(w.ex)}</div></div><button class="speak sm" data-say="ex" data-id="${w.id}" aria-label="Örnek cümleyi dinle">${IC('speak', 'sm')}</button></div>
           <p class="q-prompt-label" style="margin-top:20px">Anlamını hatırlamaya çalış, sonra aç.</p>`}
       </div>
@@ -170,7 +171,8 @@ function exAnswer(i) {
     const r = S.w[head.id]; if (r && head.first) r[3]++;
     E.q.push({ id: head.id, first: false }); if (E.phase !== 'final') E.bt.retry++;
   }
-  addXP(o.ok ? 4 : 1); afterActivity(activity(1, 0)); sfx(o.ok ? 'ok' : 'no'); touch(); exRender();
+  addXP(o.ok ? 4 : 1); afterActivity(activity(1, 0)); sfx(o.ok ? 'ok' : 'no'); haptic(o.ok ? 'ok' : 'no'); touch(); exRender();
+  if (o.ok) sparksAt($(`[data-exopt="${i}"]`), 14); else shake($('#tk'));
   const nb = $('[data-exnext]'); if (nb) nb.focus({ preventScroll: true });
 }
 function exNext() { const E = exState(); if (!E || !EXR.answered) return; E.q.shift(); EXR.q = null; EXR.answered = false; touch(); exRender(); }
@@ -243,7 +245,7 @@ function exRenderResult() {
         <div class="stat"><b class="tnum">${weak.length}</b><span>zorlandığın kelime</span></div>
         <div class="stat"><b class="tnum">${mins} dk</b><span>aktif çalışma</span></div></div>
       <div class="sess-actions">${weak.length ? `<button class="btn no" data-exgo="weak">${IC('bolt')}Zorlandıklarını çalış (${weak.length})</button>` : ''}<button class="btn ghost" data-exgo="finish">${IC('home')}Bitir</button></div></div>
-    ${weak.length ? `<div class="card" style="margin-top:12px"><div class="card-h"><h2>Zorlandıkların</h2><span class="label">en çok yanlıştan aza</span></div><div class="wlist">${weak.slice(0, 80).map(wl).join('')}</div></div>` : ''}`;
+    ${weak.length ? `<div class="card" style="margin-top:12px"><div class="card-h"><h2>Zorlandıkların</h2><span class="faint" style="font-weight:700">en çok yanlıştan aza</span></div><div class="wlist">${weak.slice(0, 80).map(wl).join('')}</div></div>` : ''}`;
 }
 
 /* ---------- olaylar ---------- */
@@ -285,20 +287,3 @@ document.addEventListener('keydown', e => {
     else if (EXR.answered && e.key === 'Enter') { e.preventDefault(); exNext(); }
   }
 });
-
-/* ---------- ana sayfa ve tekrar merkezine bağlantı ---------- */
-const _renderHome = renderHome;
-renderHome = function () {
-  _renderHome();
-  const E = exState(), host = $('#v-home .hero-act'); if (!host) return;
-  const div = document.createElement('div');
-  div.className = 'card exam-strip';
-  div.innerHTML = E && E.phase !== 'done'
-    ? `<div class="row"><span class="pill hard">Sınav modu</span><b>${esc(exScopeLabel(E.scope))}</b><span class="faint tnum" style="font-weight:700">${E.pos} / ${E.ids.length} · %${exFirstPct(E)} ilk denemede</span><span class="spacer"></span><button class="btn sm no" data-exgo="resume">${IC('arrow', 'sm')}Devam et</button></div>
-       <div class="bar" style="margin-top:12px"><span style="width:${(E.pos / E.ids.length * 100).toFixed(1)}%;background:var(--rouge)"></span></div>`
-    : `<div class="row"><span class="pill hard">Sınav modu</span><span class="muted" style="font-weight:700;flex:1;min-width:220px">Sınav öncesi: bütün kelimeleri durmadan öğren, her partide kendini test et.</span><button class="btn sm no" data-go="exam">${IC('target', 'sm')}Sınav modunu aç</button></div>`;
-  host.insertAdjacentElement('afterend', div);
-};
-
-/* açılış: ana sayfa sınav modülünden önce çizildiyse yeniden çiz; #exam bağlantısı */
-if ((location.hash || '') === '#exam') show('exam'); else if (VIEW === 'home') renderHome();

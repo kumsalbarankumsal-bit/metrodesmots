@@ -1,27 +1,40 @@
 'use strict';
 /* =====================================================================
    MÉTRO DES MOTS — çekirdek: veri, aralıklı tekrar, seviye, kayıt
-   RAW satırı: [id, ünite, grup, fr, tanım, zıt(0/1), tr, örnek, örnek_tr]
+   RAW satırı: [id, ünite, grup, fr, tanım, zıt(0/1), tr, örnek, örnek_tr, (türkçe akraba), (cinsiyet)]
+   Desteler: th1 = Thème 1 Identités (hat 1–4, kitap) · y1 = 11. sınıf 1. dönem 1. yazılı (hat 5)
    ===================================================================== */
-const W = RAW.map((r, i) => {
-  const [id, u, g, fr, def, anti, tr, ex, et] = r;
+const ALL_FIXES = Object.assign({}, FIXES, typeof FIXES_Y1 !== 'undefined' ? FIXES_Y1 : {});
+const W = RAW.concat(typeof RAW_Y1 !== 'undefined' ? RAW_Y1 : []).map((r, i) => {
+  const [id, u, g, fr, def, anti, tr, ex, et, tk, gnd] = r;
   const parts = tr.split(' ⟷ ');
   return { i, id, u, g, fr, def, anti: !!anti, tr, trMain: parts[0], trAnti: parts[1] || '', ex, et,
-           n: +id.split('.')[1], fx: FIXES[id] || '' };
+           n: +id.split('.')[1], fx: ALL_FIXES[id] || '', tk: tk || '', gnd: gnd || '', deck: u === 5 ? 'y1' : 'th1' };
 });
 const BYID = Object.create(null);
 W.forEach(w => { BYID[w.id] = w; });
-const UNIT_IDS = [1, 2, 3, 4];
+const UNIT_IDS = [1, 2, 3, 4];          /* Thème 1 hatları */
+const ALL_UNITS = [1, 2, 3, 4, 5];      /* + Yazılı hattı */
+if (typeof UNITS !== 'undefined' && !UNITS[5]) UNITS[5] = '1er examen';
 const UNIT_TR = {
   1: 'Kimlik, aile ve toplumdaki yerimiz',
   2: 'Farklı yaşam tarzları ve kalıpların dışında yaşamak',
   3: 'Sağlık, beslenme, bağımlılık ve ruh hâli',
-  4: 'Diller, dil düzeyleri ve dillerin değişimi'
+  4: 'Diller, dil düzeyleri ve dillerin değişimi',
+  5: '11. sınıf · 1. dönem · 1. yazılı — ekolojik mahalle, akıllı bina ve insansı robotlar'
+};
+const DECKS = {
+  y1: { id: 'y1', units: [5], name: '1. Yazılı', fr: '1er examen', long: '11. sınıf · 1. dönem · 1. yazılı', cls: 'u5' },
+  th1: { id: 'th1', units: [1, 2, 3, 4], name: 'Thème 1', fr: 'Identités', long: 'Thème 1 · Identités · kitap', cls: 'u1' }
 };
 const GROUPS = Object.create(null);
 W.forEach(w => { (GROUPS[w.u + '-' + w.g] = GROUPS[w.u + '-' + w.g] || []).push(w); });
 const UNIT_WORDS = {}, NGROUPS = {};
-UNIT_IDS.forEach(u => { UNIT_WORDS[u] = W.filter(w => w.u === u); NGROUPS[u] = Math.max(...UNIT_WORDS[u].map(w => w.g)); });
+ALL_UNITS.forEach(u => { UNIT_WORDS[u] = W.filter(w => w.u === u); NGROUPS[u] = UNIT_WORDS[u].length ? Math.max(...UNIT_WORDS[u].map(w => w.g)) : 0; });
+const DECK_WORDS = { y1: W.filter(w => w.deck === 'y1'), th1: W.filter(w => w.deck === 'th1') };
+function unitLabel(u) { return u === 5 ? 'Yazılı' : 'Hat ' + u; }
+function lineName(u) { return u === 5 ? 'Ligne Y' : 'Ligne ' + u; }
+function lineBadge(u) { return u === 5 ? 'Y' : String(u); }
 
 /* ---------- metin yardımcıları ---------- */
 const TRMAP = { 'ğ': 'g', 'ı': 'i', 'İ': 'i', 'ş': 's', 'ü': 'u', 'ö': 'o', 'ç': 'c', 'Ğ': 'g', 'Ş': 's', 'Ü': 'u', 'Ö': 'o', 'Ç': 'c' };
@@ -40,20 +53,65 @@ function cleanTerm(fr) {
   s = s.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
   return cap1(s);
 }
-function stationName(u, g) { return cleanTerm(GROUPS[u + '-' + g][0].fr); }
+function stationName(u, g) { return (typeof STATION_NAMES_Y1 !== 'undefined' && STATION_NAMES_Y1[u + '-' + g]) || cleanTerm(GROUPS[u + '-' + g][0].fr); }
+/* isim cinsiyeti: açık etiket, (m)/(f) işareti ya da le/la/un/une tanımlığı */
+function genderOf(w) {
+  if (w._g !== undefined) return w._g;
+  const f = w.fr.replace(/[¹²³⁴]/g, '').split(/\s*[←‹]\s*/)[0].trim();
+  let g = '';
+  const g0 = f.replace(/\s*\((m|f)\)/g, '');
+  if (!/^les\s/i.test(f) && !/\//.test(f) && !/[()]/.test(g0) && /^(le|la|l’|l'|un|une)\s?\S/i.test(g0)) {
+    const mk = (f.match(/\((m|f)\)/) || [])[1];
+    if (mk) g = mk;
+    else if (w.gnd === 'm' || w.gnd === 'f') g = w.gnd;
+    else if (/^(le|un)\s/i.test(g0)) g = 'm';
+    else if (/^(la|une)\s/i.test(g0)) g = 'f';
+  }
+  w._g = g; return g;
+}
+function bareNoun(w) { return w.fr.replace(/[¹²³⁴]/g, '').split(/\s*[←‹]\s*/)[0].replace(/\s*\((m|f)\)/g, '').replace(/^(le|la|un|une)\s+/i, '').replace(/^l[’']\s?/i, '').trim(); }
+function startsVowel(s) { return /^[aeiouyhâàäéèêëîïôöûùüœæ]/i.test(s); }
+function withArticle(w, def) {
+  const n = bareNoun(w), g = genderOf(w);
+  if (def) return (startsVowel(n) ? 'l’' : g === 'f' ? 'la ' : 'le ') + n;
+  return (g === 'f' ? 'une ' : 'un ') + n;
+}
+/* aynı kelimenin farklı anlamları (suivre¹, suivre²…) için ortak anahtar */
+function baseKey(w) { return normT(w.fr.replace(/[¹²³⁴]/g, '').split(/\s*[←‹]\s*/)[0]); }
+function uniqBase(ws) { const seen = new Set(); return ws.filter(w => { const k = baseKey(w); if (seen.has(k)) return false; seen.add(k); return true; }); }
+/* yazım alıştırmaları için hedef biçim: ilk seçenek, eril, yer tutucusuz */
+function spellTarget(w) {
+  let s = w.fr.replace(/[¹²³⁴≠]/g, '').split(/\s*[←‹]\s*/)[0].split(/\s+\/\s+/)[0];
+  s = s.replace(/\s*\+\s*(infinitif|nom|adj|phrase|subjonctif|indicatif)\b/g, '').replace(/\(([^)]*)\)/g, '').replace(/\s+/g, ' ').trim();
+  return s.toLowerCase();
+}
+/* oyunlarda kısa gösterim: üst simgesiz, ok işaretsiz, büyük harfe çevirmeden */
+function frShort(w) { let s = w.fr.replace(/[¹²³⁴]/g, '').split(/\s*[←‹]\s*/)[0].trim(); if (s.length > 26 && s.includes(' / ')) s = s.split(' / ')[0]; return s.replace(/\s+\+\s*infinitif/, ''); }
+function stripAcc(s) { return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+function rng(seed) { let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+/* tanımdaki eş anlamlılar (zıt anlam olmayanlarda) */
+function synonyms(w) { if (w.anti) return []; return w.def.replace(/[¹²³⁴]/g, '').split(/\s+\/\s+/).map(x => x.trim()).filter(x => x && x.length < 48); }
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
-W.forEach(w => { w.key = normT(w.fr + ' ' + w.tr + ' ' + w.def); w.brackets = (w.ex.match(/\[[^\]]+\]/g) || []).length; });
+W.forEach(w => { w.key = normT(w.fr + ' ' + w.tr + ' ' + w.def + ' ' + w.tk); w.brackets = (w.ex.match(/\[[^\]]+\]/g) || []).length; });
 
 /* ---------- durum ---------- */
 const DEF_P = { xp: 0, streak: 0, last: '', days: {}, goal: 10, goalDay: '', night: false, fs: 1, auto: true, sfx: false,
-                rate: 0.92, match: {}, sessSize: 0, flowV: 1, matchMode: 'def', plan: 1, lvlSeen: 0 };
-let S = { v: 1, t: 0, w: {}, f: {}, p: JSON.parse(JSON.stringify(DEF_P)) };
+                rate: 0.92, match: {}, sessSize: 0, flowV: 1, matchMode: 'def', plan: 1, lvlSeen: 0,
+                haptic: true, intro: 'day', introDay: '', examDate: '', best: {}, st: { src: 'y1', g: 0, size: 20, order: 'smart' }, mo: {} };
+let S = { v: 1, t: 0, w: {}, f: {}, n: {}, p: JSON.parse(JSON.stringify(DEF_P)) };
 function normalizeState(x) {
   const o = { v: 1, t: +x?.t || 0, w: (x && typeof x.w === 'object' && x.w) || {}, f: (x && typeof x.f === 'object' && x.f) || {},
+              n: (x && typeof x.n === 'object' && x.n) || {},
               p: Object.assign(JSON.parse(JSON.stringify(DEF_P)), (x && x.p) || {}) };
+  for (const k in o.n) { if (!BYID[k] || typeof o.n[k] !== 'object') delete o.n[k]; }
   for (const k in o.w) { if (!BYID[k] || !Array.isArray(o.w[k])) delete o.w[k]; }
   if (o.p.flowV !== 1) { o.p.sessSize = 0; o.p.flowV = 1; }
+  if (o.p.intro === true) o.p.intro = 'day'; else if (o.p.intro === false) o.p.intro = 'off';
+  if (!o.p.st || typeof o.p.st !== 'object') o.p.st = JSON.parse(JSON.stringify(DEF_P.st));
+  if (!o.p.mo || typeof o.p.mo !== 'object') o.p.mo = {};
+  if (!o.p.best || typeof o.p.best !== 'object') o.p.best = {};
   return o;
 }
 
@@ -95,8 +153,9 @@ function counts(list) {
   return c;
 }
 function groupCounts(u, g) { return counts(GROUPS[u + '-' + g]); }
-function nextStation(prefU) {
-  const order = prefU ? [prefU, ...UNIT_IDS.filter(x => x !== prefU)] : UNIT_IDS;
+function nextStation(prefU, units) {
+  units = units || UNIT_IDS;
+  const order = prefU && units.includes(prefU) ? [prefU, ...units.filter(x => x !== prefU)] : units;
   for (const u of order) for (let g = 1; g <= NGROUPS[u]; g++) {
     if (GROUPS[u + '-' + g].some(w => status(w.id) === 'new')) return { u, g };
   }
@@ -200,13 +259,13 @@ function speechText(fr) {
        .replace(/\bf\.\s*/g, 'faire ').replace(/\+\s*[\wéè.]+/g, ' ').replace(/…|\.\.\./g, ' ');
   return s.replace(/\s+/g, ' ').trim();
 }
-function speak(text, el) {
+function speak(text, el, rate) {
   if (!TTS.ok) { toast('Bu tarayıcı sesli okumayı desteklemiyor'); return; }
   try {
     speechSynthesis.cancel();
     if (!TTS.voice) pickVoice();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'fr-FR'; if (TTS.voice) u.voice = TTS.voice; u.rate = S.p.rate || 0.92;
+    u.lang = 'fr-FR'; if (TTS.voice) u.voice = TTS.voice; u.rate = rate || S.p.rate || 0.92;
     if (el) { el.classList.add('on'); u.onend = u.onerror = () => el.classList.remove('on'); }
     speechSynthesis.speak(u);
     if (!TTS.voice && TTS.count > 0 && !TTS.warned) { TTS.warned = true; toast('Cihazında Fransızca ses paketi bulunamadı; telaffuz varsayılan sesle okunuyor'); }
@@ -300,8 +359,8 @@ function chooseType(w, mode) {
   types = types.filter(t => (t !== 'cloze' || clozeable(w)) && (t !== 'type' || typeable(w)));
   return pick(types.length ? types : ['fr2tr']);
 }
-function makeQ(w, mode) {
-  const type = chooseType(w, mode);
+function makeQ(w, mode, force) {
+  const type = force || chooseType(w, mode);
   const q = { type, w };
   if (type === 'type') { q.answer = w.fr; return q; }
   let ds, opt;
