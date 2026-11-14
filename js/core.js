@@ -2,39 +2,56 @@
 /* =====================================================================
    MÉTRO DES MOTS — çekirdek: veri, aralıklı tekrar, seviye, kayıt
    RAW satırı: [id, ünite, grup, fr, tanım, zıt(0/1), tr, örnek, örnek_tr, (türkçe akraba), (cinsiyet)]
-   Desteler: th1 = Thème 1 Identités (hat 1–4, kitap) · y1 = 11. sınıf 1. dönem 1. yazılı (hat 5)
+   Desteler birbirinden tamamen ayrıdır: tekrar, keşif, çeldiriciler, sınav ve Stüdyo setleri
+   hiçbir zaman iki desteyi karıştırmaz.
+     y1  = 11. sınıf · 1. dönem · 1. yazılı (Ligne Y, ünite 5)
+     th1 = Thème 1 · Identités (Métro 1–4, üniteler 1–4)
+     th2 = Thème 2 · Expériences (RER A–D, üniteler 6–9)
+   Öğrenme Fransızca–Fransızcadır: tanım + eş anlamlılar + zıt anlamlılar (FRX). Türkçe yalnızca destek.
    ===================================================================== */
-const ALL_FIXES = Object.assign({}, FIXES, typeof FIXES_Y1 !== 'undefined' ? FIXES_Y1 : {});
-const W = RAW.concat(typeof RAW_Y1 !== 'undefined' ? RAW_Y1 : []).map((r, i) => {
+const ALL_FIXES = Object.assign({}, FIXES, typeof FIXES_Y1 !== 'undefined' ? FIXES_Y1 : {}, typeof FIXES_T2 !== 'undefined' ? FIXES_T2 : {});
+const FRX = Object.assign({}, typeof FRX_T1 !== 'undefined' ? FRX_T1 : {}, typeof FRX_T2 !== 'undefined' ? FRX_T2 : {});
+function deckOf(u) { return u >= 6 ? 'th2' : u === 5 ? 'y1' : 'th1'; }
+const W = RAW.concat(typeof RAW_Y1 !== 'undefined' ? RAW_Y1 : [], typeof RAW_T2 !== 'undefined' ? RAW_T2 : []).map((r, i) => {
   const [id, u, g, fr, def, anti, tr, ex, et, tk, gnd] = r;
   const parts = tr.split(' ⟷ ');
   return { i, id, u, g, fr, def, anti: !!anti, tr, trMain: parts[0], trAnti: parts[1] || '', ex, et,
-           n: +id.split('.')[1], fx: ALL_FIXES[id] || '', tk: tk || '', gnd: gnd || '', deck: u === 5 ? 'y1' : 'th1' };
+           n: +id.split('.')[1], fx: ALL_FIXES[id] || '', tk: tk || '', gnd: gnd || '', deck: deckOf(u) };
 });
 const BYID = Object.create(null);
 W.forEach(w => { BYID[w.id] = w; });
 const UNIT_IDS = [1, 2, 3, 4];          /* Thème 1 hatları */
-const ALL_UNITS = [1, 2, 3, 4, 5];      /* + Yazılı hattı */
-if (typeof UNITS !== 'undefined' && !UNITS[5]) UNITS[5] = '1er examen';
+const T2_IDS = [6, 7, 8, 9];            /* Thème 2 hatları (RER A–D) */
+const ALL_UNITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+if (typeof UNITS !== 'undefined') { if (!UNITS[5]) UNITS[5] = '1er examen'; if (typeof UNITS_T2 !== 'undefined') Object.assign(UNITS, UNITS_T2); }
 const UNIT_TR = {
   1: 'Kimlik, aile ve toplumdaki yerimiz',
   2: 'Farklı yaşam tarzları ve kalıpların dışında yaşamak',
   3: 'Sağlık, beslenme, bağımlılık ve ruh hâli',
   4: 'Diller, dil düzeyleri ve dillerin değişimi',
-  5: '11. sınıf · 1. dönem · 1. yazılı — ekolojik mahalle, akıllı bina ve insansı robotlar'
+  5: '11. sınıf · 1. dönem · 1. yazılı — ekolojik mahalle, akıllı bina ve insansı robotlar',
+  6: 'Yolculuklar, seyahat deneyimi ve ufku genişletmek',
+  7: 'Anılar, hatırlamak, aile geçmişi ve kayıplar',
+  8: 'Yetişkinliğe geçiş: ritüeller, bağımsızlık ve sorumluluk',
+  9: 'Göç, sınırlar ve daha iyi bir yaşam arayışı'
 };
 const DECKS = {
-  y1: { id: 'y1', units: [5], name: '1. Yazılı', fr: '1er examen', long: '11. sınıf · 1. dönem · 1. yazılı', cls: 'u5' },
-  th1: { id: 'th1', units: [1, 2, 3, 4], name: 'Thème 1', fr: 'Identités', long: 'Thème 1 · Identités · kitap', cls: 'u1' }
+  y1: { id: 'y1', units: [5], name: '1. Yazılı', fr: '1er examen', long: '11. sınıf · 1. dönem · 1. yazılı', cls: 'u5', tab: 'yazili', net: 'Ligne Y' },
+  th1: { id: 'th1', units: [1, 2, 3, 4], name: 'Thème 1', fr: 'Identités', long: 'Thème 1 · Identités', cls: 'dk1', tab: 'th1', net: 'Métro' },
+  th2: { id: 'th2', units: [6, 7, 8, 9], name: 'Thème 2', fr: 'Expériences', long: 'Thème 2 · Expériences', cls: 'dk2', tab: 'th2', net: 'RER' }
 };
+const DECK_ORDER = ['y1', 'th1', 'th2'];
 const GROUPS = Object.create(null);
 W.forEach(w => { (GROUPS[w.u + '-' + w.g] = GROUPS[w.u + '-' + w.g] || []).push(w); });
 const UNIT_WORDS = {}, NGROUPS = {};
 ALL_UNITS.forEach(u => { UNIT_WORDS[u] = W.filter(w => w.u === u); NGROUPS[u] = UNIT_WORDS[u].length ? Math.max(...UNIT_WORDS[u].map(w => w.g)) : 0; });
-const DECK_WORDS = { y1: W.filter(w => w.deck === 'y1'), th1: W.filter(w => w.deck === 'th1') };
-function unitLabel(u) { return u === 5 ? 'Yazılı' : 'Hat ' + u; }
-function lineName(u) { return u === 5 ? 'Ligne Y' : 'Ligne ' + u; }
-function lineBadge(u) { return u === 5 ? 'Y' : String(u); }
+const DECK_WORDS = { y1: W.filter(w => w.deck === 'y1'), th1: W.filter(w => w.deck === 'th1'), th2: W.filter(w => w.deck === 'th2') };
+const DECK_STATIONS = {}; DECK_ORDER.forEach(d => { DECK_STATIONS[d] = DECKS[d].units.reduce((s, u) => s + NGROUPS[u], 0); });
+const RER = 'ABCD';
+function unitLabel(u) { return u === 5 ? 'Yazılı' : u >= 6 ? 'Hat ' + RER[u - 6] : 'Hat ' + u; }
+function lineName(u) { return u === 5 ? 'Ligne Y' : u >= 6 ? 'RER ' + RER[u - 6] : 'Ligne ' + u; }
+function lineBadge(u) { return u === 5 ? 'Y' : u >= 6 ? RER[u - 6] : String(u); }
+function deckName(dk) { return (DECKS[dk] || DECKS.th1).name; }
 
 /* ---------- metin yardımcıları ---------- */
 const TRMAP = { 'ğ': 'g', 'ı': 'i', 'İ': 'i', 'ş': 's', 'ü': 'u', 'ö': 'o', 'ç': 'c', 'Ğ': 'g', 'Ş': 's', 'Ü': 'u', 'Ö': 'o', 'Ç': 'c' };
@@ -87,19 +104,68 @@ function spellTarget(w) {
 }
 /* oyunlarda kısa gösterim: üst simgesiz, ok işaretsiz, büyük harfe çevirmeden */
 function frShort(w) { let s = w.fr.replace(/[¹²³⁴]/g, '').split(/\s*[←‹]\s*/)[0].trim(); if (s.length > 26 && s.includes(' / ')) s = s.split(' / ')[0]; return s.replace(/\s+\+\s*infinitif/, ''); }
+/* seçeneklerde kelimenin baş hâli: türetme oku (← large) ve üst simgeler olmadan */
+function frHead(w) { return noSup(w.fr).split(/\s*[←‹]\s*/)[0].trim(); }
 function stripAcc(s) { return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 function rng(seed) { let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-/* tanımdaki eş anlamlılar (zıt anlam olmayanlarda) */
-function synonyms(w) { if (w.anti) return []; return w.def.replace(/[¹²³⁴]/g, '').split(/\s+\/\s+/).map(x => x.trim()).filter(x => x && x.length < 48); }
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
-W.forEach(w => { w.key = normT(w.fr + ' ' + w.tr + ' ' + w.def + ' ' + w.tk); w.brackets = (w.ex.match(/\[[^\]]+\]/g) || []).length; });
+W.forEach(w => { const r = FRX[w.id]; w.key = normT(w.fr + ' ' + w.tr + ' ' + w.def + ' ' + w.tk + (r ? ' ' + r.join(' ') : '')); w.brackets = (w.ex.match(/\[[^\]]+\]/g) || []).length; });
+
+/* ---------- Fransızca–Fransızca: définition · synonymes · antonymes ----------
+   Öğretmenin listesindeki eşleşme her zaman önce gelir (L: true):
+   · zıt olmayan maddede listedeki tanım eş anlamlılardır; FRX tanımı ayrıca verir
+   · FRX tanımı boşsa listedeki ifade zaten bir tanımdır, tanım olarak gösterilir
+   · ≠ maddelerinde listedeki ifade zıt anlamlıdır; tanım FRX'ten gelir */
+function noSup(s) { return String(s).replace(/[¹²³⁴]/g, ''); }
+function splitTeacher(s) { return noSup(s).split(/\s+\/\s+|\s+·\s+/).map(x => x.trim()).filter(Boolean); }
+function splitExtra(s) { return String(s || '').split(';').map(x => x.trim()).filter(Boolean); }
+function listText(w) { return noSup(w.def).trim(); }
+function gloss(w) { return (w.anti ? '≠ ' : '') + listText(w); }
+function termKey(t) { return stripArt(canon(t)); }
+function fxOf(w) {
+  if (w._x) return w._x;
+  const r = FRX[w.id] || ['', '', ''], T = splitTeacher(w.def);
+  const self = new Set(frVariants(w.fr).map(stripArt)), seen = new Set();
+  const take = (arr, L) => arr.map(t => ({ t, L })).filter(o => { const k = termKey(o.t); if (!k || self.has(k) || seen.has(k)) return false; seen.add(k); return true; });
+  let def = (r[0] || '').trim(), defL = false;
+  if (!def && !w.anti) { def = listText(w); defL = true; }
+  const syn = take(w.anti || defL ? [] : T, true).concat(take(splitExtra(r[1]), false));
+  const ant = take(w.anti ? T : [], true).concat(take(splitExtra(r[2]), false));
+  /* tanım bir eşle aynıysa iki kez gösterme; listedeki ifadeyse tanım öğretmenin tanımı sayılır */
+  if (def && !defL) { const k = termKey(def), i = syn.findIndex(o => termKey(o.t) === k); if (i >= 0) { if (syn[i].L) defL = true; syn.splice(i, 1); } }
+  const terms = new Set(self);
+  syn.concat(ant).forEach(o => terms.add(termKey(o.t)));
+  T.forEach(t => { const k = termKey(t); if (k) terms.add(k); });
+  terms.delete('');
+  w._x = { def, defL, syn, ant, terms };
+  return w._x;
+}
+/* iki kelime aynı anlam ağında mı? (ortak terim: kendisi, eşi ya da zıttı) — çeldiricide ikinci doğru cevap çıkmasın */
+function related(a, b) {
+  if (a === b || baseKey(a) === baseKey(b)) return true;
+  const A = fxOf(a).terms, B = fxOf(b).terms, [s, l] = A.size < B.size ? [A, B] : [B, A];
+  for (const k of s) if (l.has(k)) return true;
+  return false;
+}
+function cut(s, n) { s = String(s); return s.length > n ? s.slice(0, Math.max(1, n - 1)).replace(/[\s,;·/]+$/, '') + '…' : s; }
+/* oyunlarda kısa eş: önce eş anlamlı, sonra zıt anlamlı, sonra kısa tanım */
+function shortPartner(w, max) {
+  max = max || 44; const X = fxOf(w);
+  const s = X.syn.find(o => o.t.length <= max); if (s) return { t: s.t, rel: 'syn', sym: '≈' };
+  const a = X.ant.find(o => o.t.length <= max); if (a) return { t: a.t, rel: 'ant', sym: '≠' };
+  if (X.def) return { t: cut(X.def, max + 26), rel: 'def', sym: '' };
+  return { t: cut(gloss(w), max + 26), rel: 'list', sym: '' };
+}
+/* Türkçe destek: off = gizli · after = cevaptan sonra (varsayılan) · always = her zaman */
+function trMode() { const m = S.p.trs; return m === 'off' || m === 'always' ? m : 'after'; }
 
 /* ---------- durum ---------- */
 const DEF_P = { xp: 0, streak: 0, last: '', days: {}, goal: 10, goalDay: '', night: false, fs: 1, auto: true, sfx: false,
                 rate: 0.92, match: {}, sessSize: 0, flowV: 1, matchMode: 'def', plan: 1, lvlSeen: 0,
-                haptic: true, intro: 'day', introDay: '', examDate: '', best: {}, st: { src: 'y1', g: 0, size: 20, order: 'smart' }, mo: {} };
+                haptic: true, intro: 'day', introDay: '', examDate: '', best: {}, st: { deck: 'th2', src: 'all', g: 0, size: 20, order: 'smart' }, mo: {},
+                trs: 'after', deck: '', pl: { th1: 1, th2: 6 } };
 let S = { v: 1, t: 0, w: {}, f: {}, n: {}, p: JSON.parse(JSON.stringify(DEF_P)) };
 function normalizeState(x) {
   const o = { v: 1, t: +x?.t || 0, w: (x && typeof x.w === 'object' && x.w) || {}, f: (x && typeof x.f === 'object' && x.f) || {},
@@ -112,7 +178,46 @@ function normalizeState(x) {
   if (!o.p.st || typeof o.p.st !== 'object') o.p.st = JSON.parse(JSON.stringify(DEF_P.st));
   if (!o.p.mo || typeof o.p.mo !== 'object') o.p.mo = {};
   if (!o.p.best || typeof o.p.best !== 'object') o.p.best = {};
+  /* v7: Thème 2 + Fransızca–Fransızca */
+  if (!['off', 'after', 'always'].includes(o.p.trs)) o.p.trs = 'after';
+  if (!(x && x.p && x.p.pl && typeof x.p.pl === 'object')) o.p.pl = { th1: UNIT_IDS.includes(o.p.plan) ? o.p.plan : 1, th2: 6 };
+  if (!UNIT_IDS.includes(o.p.pl.th1)) o.p.pl.th1 = 1;
+  if (!T2_IDS.includes(o.p.pl.th2)) o.p.pl.th2 = 6;
+  if (!DECKS[o.p.deck]) o.p.deck = '';
+  if (o.p.matchMode !== 'def' && o.p.matchMode !== 'dfn') o.p.matchMode = o.p.matchMode === 'tr' ? 'dfn' : 'def';
+  const mo = o.p.mo;
+  if (mo.cards && mo.cards.front !== 'fr' && mo.cards.front !== 'def') mo.cards.front = 'def';
+  if (mo.match && !['def', 'dfn', 'syn'].includes(mo.match.kind)) mo.match.kind = 'syn';
+  if (mo.test && !['mix', 'list', 'def', 'syn', 'ant'].includes(mo.test.dir)) mo.test.dir = 'mix';
+  stNormalize(o.p.st);
+  const E = o.p.exam;
+  if (E && E.scope && E.scope.type === 'all' && !DECKS[E.scope.deck]) E.scope.deck = 'th1';
+  if (E && Array.isArray(E.ids)) E.ids = E.ids.filter(id => BYID[id]);
   return o;
+}
+/* Stüdyo seti: { deck, src: all | uN | due | hard | fav | mine, g, size, order } — eski { src: 'y1' | 'u3' | 'due' … } kayıtları çevrilir */
+function stNormalize(sel) {
+  if (!sel || typeof sel !== 'object') return sel;
+  const m = /^u(\d)$/.exec(sel.src || '');
+  if (!DECKS[sel.deck]) {
+    if (sel.src === 'y1') { sel.deck = 'y1'; sel.src = 'all'; }
+    else if (DECKS[sel.src]) { sel.deck = sel.src; sel.src = 'all'; }
+    else if (m) sel.deck = deckOf(+m[1]);
+    else sel.deck = 'y1';
+  }
+  const m2 = /^u(\d)$/.exec(sel.src || '');
+  if (m2 && (+m2[1] === 5 || !DECKS[sel.deck].units.includes(+m2[1]))) { sel.src = 'all'; if (+m2[1] !== 5) sel.g = 0; }
+  if (!m2 && !['all', 'due', 'hard', 'fav', 'mine'].includes(sel.src)) sel.src = 'all';
+  if (typeof sel.g !== 'number') sel.g = 0;
+  if (![0, 10, 20, 40].includes(sel.size)) sel.size = 20;
+  if (!['smart', 'book', 'rand'].includes(sel.order)) sel.order = 'smart';
+  return sel;
+}
+/* düğmelerdeki kısa set adı: 'y1' | 'th1' | 'th2' (bütün deste) ya da 'uN' (bir hat) */
+function stFrom(tok, g) {
+  const m = /^u(\d)$/.exec(tok || '');
+  if (m) { const u = +m[1]; return { deck: deckOf(u), src: u === 5 ? 'all' : 'u' + u, g: g || 0 }; }
+  return { deck: DECKS[tok] ? tok : 'y1', src: 'all', g: g || 0 };
 }
 
 /* ---------- aralıklı tekrar (WordUp usulü 5 basamak) ----------
@@ -146,7 +251,7 @@ function srsAnswer(id, ok) {
   return { from, to: 0, fail: true };
 }
 function resetWord(id) { delete S.w[id]; }
-function dueList(t) { t = t ?? nowM(); return W.filter(w => isDue(w.id, t)).sort((a, b) => S.w[a.id][1] - S.w[b.id][1]); }
+function dueList(t, dk) { t = t ?? nowM(); return (dk && DECK_WORDS[dk] ? DECK_WORDS[dk] : W).filter(w => isDue(w.id, t)).sort((a, b) => S.w[a.id][1] - S.w[b.id][1]); }
 function counts(list) {
   const c = { new: 0, learn: 0, master: 0, known: 0, hard: 0, total: 0 };
   (list || W).forEach(w => { c[status(w.id)]++; c.total++; if (isHard(w.id)) c.hard++; });
@@ -287,19 +392,38 @@ function sfx(kind) {
   } catch (e) {}
 }
 
-/* ---------- soru üretimi ---------- */
+/* ---------- soru üretimi (Fransızca–Fransızca) ---------- */
 function sameish(a, b) { return normT(a.fr) === normT(b.fr) || normT(a.trMain) === normT(b.trMain) || normT(a.def) === normT(b.def); }
+/* çeldiriciler yalnızca aynı desteden gelir: önce aynı durak, sonra aynı hat, sonra deste */
+function deckPools(w) { return [GROUPS[w.u + '-' + w.g], UNIT_WORDS[w.u], DECK_WORDS[w.deck]]; }
 function distractors(w, n, extra, keyFn) {
   const out = [], seen = new Set(), keys = new Set(keyFn ? [normT(keyFn(w))] : []);
-  const pools = [GROUPS[w.u + '-' + w.g], UNIT_WORDS[w.u], W];
-  for (const pool of pools) {
+  for (const pool of deckPools(w)) {
     for (const c of shuffle(pool.slice())) {
-      if (c === w || sameish(c, w)) continue;
+      if (c === w || sameish(c, w) || related(w, c)) continue;
       if (extra && !extra(c)) continue;
-      if (out.some(o => sameish(o, c))) continue;
+      if (out.some(o => sameish(o, c) || related(o, c))) continue;
       if (seen.has(c.id)) continue;
       if (keyFn) { const k = normT(keyFn(c)); if (!k || keys.has(k)) continue; keys.add(k); }
       seen.add(c.id); out.push(c);
+      if (out.length >= n) return out;
+    }
+  }
+  return out;
+}
+/* metin çeldiricileri: başka kelimelerin tanımı / eşi / zıttı (aynı desteden, anlam ağı ayrı) */
+function textDistractors(w, n, texts, extra) {
+  const out = [], keys = new Set(fxOf(w).terms), ck = new Set();
+  if (n <= 0) return out;
+  for (const pool of deckPools(w)) {
+    for (const c of shuffle(pool.slice())) {
+      if (c === w || ck.has(c.id) || related(w, c)) continue;
+      if (extra && !extra(c)) continue;
+      ck.add(c.id);
+      for (const t of shuffle(texts(c).slice())) {
+        const k = termKey(t); if (!k || keys.has(k)) continue;
+        keys.add(k); out.push(t); break;
+      }
       if (out.length >= n) return out;
     }
   }
@@ -346,28 +470,78 @@ function clozeable(w) {
   if (w.brackets !== 1) return false;
   return distractors(w, 3, c => c.brackets === 1, bracketText).length === 3;
 }
-const QTYPES_TR = { fr2tr: 'Anlamı ne?', tr2fr: 'Fransızcası hangisi?', def2fr: 'Tanıma uyan kelime', cloze: 'Boşluğu doldur', type: 'Fransızcasını yaz' };
+/* soru tipleri
+   list   kelime → listedeki eşi (sınavdaki gibi; ≠ maddelerde zıttı)
+   fr2def kelime → tanımı          def2fr tanım → kelime
+   fr2syn kelime → eş anlamlısı    syn2fr eş anlamlı → kelime
+   fr2ant kelime → zıt anlamlısı   ant2fr zıt anlamlı → kelime (çeldiricilerden biri kelimenin eşi olabilir)
+   cloze  örnek cümlede boşluk     type   tanımdan kelimeyi yaz */
+const QTYPES_TR = { list: 'Liste', fr2def: 'Tanım', def2fr: 'Tanımdan kelime', fr2syn: 'Eş anlamlı', syn2fr: 'Eş anlamlıdan kelime',
+  fr2ant: 'Zıt anlamlı', ant2fr: 'Zıt anlamlıdan kelime', cloze: 'Cümlede', type: 'Yazma' };
+const WORD_PROMPT = new Set(['list', 'fr2def', 'fr2syn', 'fr2ant']);
+function qAvail(w, t) {
+  const X = fxOf(w);
+  if (t === 'list') return !!listText(w);
+  if (t === 'fr2def' || t === 'def2fr') return !!X.def && X.def.length <= 170;
+  if (t === 'fr2syn' || t === 'syn2fr') return X.syn.length > 0;
+  if (t === 'fr2ant' || t === 'ant2fr') return X.ant.length > 0;
+  if (t === 'cloze') return clozeable(w);
+  if (t === 'type') return typeable(w) && !!(X.def || X.syn.length || X.ant.length);
+  return false;
+}
 function chooseType(w, mode) {
   const st = Math.max(0, stageOf(w.id));
   let types;
   if (mode === 'review') {
-    if (st === 0) types = ['fr2tr', 'fr2tr', 'def2fr'];
-    else if (st === 1) types = ['tr2fr', 'def2fr', 'fr2tr'];
-    else if (st === 2) types = ['cloze', 'def2fr', 'tr2fr'];
-    else types = ['type', 'cloze', 'tr2fr', 'def2fr'];
-  } else types = ['fr2tr', 'tr2fr', 'def2fr', 'cloze', 'fr2tr'];
-  types = types.filter(t => (t !== 'cloze' || clozeable(w)) && (t !== 'type' || typeable(w)));
-  return pick(types.length ? types : ['fr2tr']);
+    if (st === 0) types = ['list', 'fr2def', 'list'];
+    else if (st === 1) types = ['def2fr', 'syn2fr', 'ant2fr', 'list'];
+    else if (st === 2) types = ['fr2syn', 'fr2ant', 'cloze', 'def2fr'];
+    else types = ['type', 'cloze', 'fr2ant', 'fr2syn', 'syn2fr'];
+  } else types = ['list', 'fr2def', 'def2fr', 'fr2syn', 'syn2fr', 'fr2ant', 'ant2fr', 'cloze'];
+  types = types.filter(t => qAvail(w, t));
+  return pick(types.length ? types : ['list']);
 }
+/* yazma sorusunda gösterilen ipucu: tanım, yoksa eş/zıt anlamlı */
+function typeClue(w) { const X = fxOf(w); return X.def ? { t: X.def, sym: '' } : X.syn.length ? { t: X.syn.map(o => o.t).slice(0, 3).join(' · '), sym: '≈' } : { t: X.ant.map(o => o.t).slice(0, 3).join(' · '), sym: '≠' }; }
 function makeQ(w, mode, force) {
-  const type = force || chooseType(w, mode);
-  const q = { type, w };
-  if (type === 'type') { q.answer = w.fr; return q; }
-  let ds, opt;
-  if (type === 'fr2tr') { ds = distractors(w, 3, null, c => c.trMain); opt = c => c.trMain; }
-  else if (type === 'tr2fr' || type === 'def2fr') { ds = distractors(w, 3, null, c => c.fr); opt = c => c.fr; }
-  else { ds = distractors(w, 3, c => c.brackets === 1, bracketText); opt = c => bracketText(c); }
-  q.answer = opt(w);
-  q.options = shuffle([{ text: opt(w), ok: true }, ...ds.map(c => ({ text: opt(c), ok: false, id: c.id }))]);
+  const type = force && qAvail(w, force) ? force : chooseType(w, mode);
+  const X = fxOf(w), q = { type, w };
+  const mc = (answer, ds) => { q.answer = answer; q.options = shuffle([{ text: answer, ok: true }, ...ds.map(t => ({ text: t, ok: false }))]); return q; };
+  if (type === 'type') { q.answer = w.fr; q.clue = typeClue(w); return q; }
+  if (type === 'list') { q.sym = w.anti ? '≠' : '≈'; return mc(listText(w), textDistractors(w, 3, c => [listText(c)], c => c.anti === w.anti)); }
+  if (type === 'fr2def') return mc(X.def, textDistractors(w, 3, c => { const d = fxOf(c).def; return d && d.length <= 170 ? [d] : []; }));
+  if (type === 'fr2syn') return mc(pick(X.syn).t, textDistractors(w, 3, c => fxOf(c).syn.map(o => o.t)));
+  if (type === 'fr2ant') {
+    const trap = X.syn.length && Math.random() < 0.6 ? [pick(X.syn).t] : [];
+    return mc(pick(X.ant).t, trap.concat(textDistractors(w, 3 - trap.length, c => fxOf(c).ant.concat(fxOf(c).syn).map(o => o.t))));
+  }
+  if (type === 'def2fr' || type === 'syn2fr' || type === 'ant2fr') {
+    q.shown = type === 'def2fr' ? X.def : type === 'syn2fr' ? pick(X.syn).t : pick(X.ant).t;
+    q.sym = type === 'syn2fr' ? '≈' : type === 'ant2fr' ? '≠' : '';
+    const ds = distractors(w, 3, null, c => frHead(c));
+    q.answer = frHead(w); q.options = shuffle([{ text: q.answer, ok: true }, ...ds.map(c => ({ text: frHead(c), ok: false, id: c.id }))]);
+    return q;
+  }
+  const ds = distractors(w, 3, c => c.brackets === 1, bracketText);
+  q.answer = bracketText(w);
+  q.options = shuffle([{ text: q.answer, ok: true }, ...ds.map(c => ({ text: bracketText(c), ok: false, id: c.id }))]);
   return q;
+}
+/* doğru/yanlış eşleşmesi (Test, Şimşek): kelime ≈ eşi · ≠ zıttı · : tanımı; yanlışlarda tuzak olarak zıttı ≈ ile gösterilebilir */
+function tfPair(w) {
+  const X = fxOf(w), rels = [];
+  if (X.syn.length) rels.push('syn', 'syn');
+  if (X.ant.length) rels.push('ant');
+  if (X.def && X.def.length <= 90) rels.push('def');
+  if (!rels.length) rels.push('list');
+  const rel = pick(rels);
+  let truth = Math.random() < 0.5, shown = '', sym = rel === 'syn' ? '≈' : rel === 'ant' ? '≠' : rel === 'def' ? ':' : (w.anti ? '≠' : '≈');
+  const right = rel === 'syn' ? pick(X.syn).t : rel === 'ant' ? pick(X.ant).t : rel === 'def' ? X.def : listText(w);
+  if (!truth) {
+    if (rel === 'syn' && X.ant.length && Math.random() < 0.4) shown = pick(X.ant).t;
+    else if (rel === 'ant' && X.syn.length && Math.random() < 0.4) shown = pick(X.syn).t;
+    else shown = textDistractors(w, 1, c => { const C = fxOf(c); return rel === 'syn' ? C.syn.map(o => o.t) : rel === 'ant' ? C.ant.map(o => o.t) : rel === 'def' ? (C.def && C.def.length <= 90 ? [C.def] : []) : (c.anti === w.anti ? [listText(c)] : []); })[0] || '';
+  }
+  if (!shown) { truth = true; shown = right; }
+  return { w, rel, truth, shown, sym, right };
 }

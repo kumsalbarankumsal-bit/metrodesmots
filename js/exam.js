@@ -8,13 +8,16 @@ let EXR = { q: null, qid: null, answered: false, ok: false, revealed: false, las
 const EX_PHASE_TR = { learn: 'Öğren', check: 'Kontrol testi', mix: 'Karma tekrar', final: 'Final sınavı' };
 
 function exState() { return S.p.exam || null; }
+/* kapsam her zaman tek bir destenin içindedir: bütün deste, bir hat ya da bir hattın durak aralığı */
+function exScopeDeck(sc) { return !sc ? 'th1' : sc.type === 'all' ? (DECKS[sc.deck] ? sc.deck : 'th1') : deckOf(sc.u); }
 function exScopeIds(sc) {
-  return W.filter(w => sc.type === 'all' ? w.deck === 'th1' : (w.u === sc.u && (sc.type === 'unit' || (w.g >= sc.g1 && w.g <= sc.g2)))).map(w => w.id);
+  if (sc.type === 'all') return DECK_WORDS[exScopeDeck(sc)].map(w => w.id);
+  return W.filter(w => w.u === sc.u && (sc.type === 'unit' || (w.g >= sc.g1 && w.g <= sc.g2))).map(w => w.id);
 }
 function exScopeLabel(sc) {
-  if (sc.type === 'all') return 'Bütün kitap · Thème 1';
-  if (sc.type === 'unit') return sc.u === 5 ? '1. Yazılı · 129 kelime' : lineName(sc.u) + ' · ' + UNITS[sc.u];
-  return (sc.u === 5 ? '1. Yazılı' : lineName(sc.u)) + ' · durak ' + sc.g1 + (sc.g2 !== sc.g1 ? '–' + sc.g2 : '');
+  if (sc.type === 'all') return DECKS[exScopeDeck(sc)].long + ' · bütün deste';
+  if (sc.type === 'unit') return sc.u === 5 ? '1. Yazılı · 129 kelime' : DECKS[deckOf(sc.u)].name + ' · ' + lineName(sc.u) + ' · ' + UNITS[sc.u];
+  return (sc.u === 5 ? '1. Yazılı' : DECKS[deckOf(sc.u)].name + ' · ' + lineName(sc.u)) + ' · durak ' + sc.g1 + (sc.g2 !== sc.g1 ? '–' + sc.g2 : '');
 }
 function exTick() {
   const E = exState(); if (!E) return;
@@ -28,7 +31,8 @@ function exEta(E) {
 function exFirstPct(E) { return E.st.asked ? Math.round(E.st.firstOk / E.st.asked * 100) : 0; }
 
 /* ---------- kurulum ekranı ---------- */
-const EXSET = { type: 'unit', u: 5, g1: 1, g2: 5, size: 25, reveal: true, mix: true, skip: false, confirm: false };
+const EXSET = { type: 'unit', u: 5, deck: 'th1', g1: 1, g2: 5, size: 25, reveal: true, mix: true, skip: false, confirm: false };
+function exSetDeck(dk) { if (dk === 'y1') { EXSET.type = 'unit'; EXSET.u = 5; } else { EXSET.type = 'all'; EXSET.deck = dk; EXSET.u = DECKS[dk].units[0]; } EXSET.g1 = 1; EXSET.g2 = Math.min(5, NGROUPS[EXSET.u]); }
 function renderExam() {
   const E = exState(), v = $('#v-exam');
   const ug = EXSET.u;
@@ -54,14 +58,16 @@ function renderExam() {
     <div class="grid">${resume}
       <div class="card s12">
         <div class="card-h"><h2>Kapsam</h2><span class="faint tnum" style="font-weight:800">${preview.length - skipN} kelime</span></div>
-        <div class="filters" style="margin-top:0">
-          <button class="fchip ufc u5" data-exscope="unit" data-u="5" aria-pressed="${EXSET.type === 'unit' && EXSET.u === 5}">1. Yazılı (${UNIT_WORDS[5].length})</button>
-          <button class="fchip" data-exscope="all" aria-pressed="${EXSET.type === 'all'}">Bütün kitap (${DECK_WORDS.th1.length})</button>
-          ${UNIT_IDS.map(u => `<button class="fchip ufc u${u}" data-exscope="unit" data-u="${u}" aria-pressed="${EXSET.type === 'unit' && EXSET.u === u}">Hat ${u} (${UNIT_WORDS[u].length})</button>`).join('')}
-          <button class="fchip" data-exscope="range" aria-pressed="${EXSET.type === 'range'}">Durak aralığı</button>
+        <div class="ex-scopes">
+          <div class="ex-sc"><span class="ex-dk">${deckMark('y1', 'xs')}1. Yazılı</span><div class="filters" style="margin:0">
+            <button class="fchip ufc u5" data-exscope="unit" data-u="5" aria-pressed="${EXSET.type === 'unit' && EXSET.u === 5}">Bütün liste (${UNIT_WORDS[5].length})</button></div></div>
+          ${['th1', 'th2'].map(dk => `<div class="ex-sc"><span class="ex-dk">${deckMark(dk, 'xs')}${esc(DECKS[dk].name)}</span><div class="filters" style="margin:0">
+            <button class="fchip dfc ${DECKS[dk].cls}" data-exscope="all" data-dk="${dk}" aria-pressed="${EXSET.type === 'all' && EXSET.deck === dk}">Bütün deste (${DECK_WORDS[dk].length})</button>
+            ${DECKS[dk].units.map(u => `<button class="fchip ufc u${u}" data-exscope="unit" data-u="${u}" aria-pressed="${EXSET.type === 'unit' && EXSET.u === u}">${unitLabel(u)} (${UNIT_WORDS[u].length})</button>`).join('')}</div></div>`).join('')}
+          <div class="ex-sc"><span class="ex-dk">${IC('map', 'sm')}Durak aralığı</span><div class="filters" style="margin:0"><button class="fchip" data-exscope="range" aria-pressed="${EXSET.type === 'range'}">Bir hattın duraklarını seç</button></div></div>
         </div>
         ${EXSET.type === 'range' ? `<div class="row ex-range">
-          <label>Hat <select id="exU">${[5, ...UNIT_IDS].map(u => `<option value="${u}" ${u === ug ? 'selected' : ''}>${lineBadge(u)} · ${esc(u === 5 ? '1. Yazılı' : UNITS[u])}</option>`).join('')}</select></label>
+          <label>Hat <select id="exU">${DECK_ORDER.map(dk => `<optgroup label="${esc(DECKS[dk].long)}">${DECKS[dk].units.map(u => `<option value="${u}" ${u === ug ? 'selected' : ''}>${esc(u === 5 ? '1. Yazılı' : lineName(u) + ' · ' + UNITS[u])}</option>`).join('')}</optgroup>`).join('')}</select></label>
           <label>İlk durak <select id="exG1">${opts(NGROUPS[ug], EXSET.g1)}</select></label>
           <label>Son durak <select id="exG2">${opts(NGROUPS[ug], EXSET.g2)}</select></label></div>` : ''}
         <div class="set-row"><div><div class="t">Parti boyu</div><div class="d">Kaç kelimede bir kontrol testi gelsin.</div></div>${seg('size', [[20, '20'], [25, '25'], [30, '30']])}</div>
@@ -77,7 +83,7 @@ function renderExam() {
   if (G2) G2.onchange = () => { EXSET.g2 = +G2.value; if (EXSET.g1 > EXSET.g2) EXSET.g1 = EXSET.g2; renderExam(); };
 }
 function exStart() {
-  const sc = EXSET.type === 'all' ? { type: 'all' } : EXSET.type === 'unit' ? { type: 'unit', u: EXSET.u } : { type: 'range', u: EXSET.u, g1: EXSET.g1, g2: EXSET.g2 };
+  const sc = EXSET.type === 'all' ? { type: 'all', deck: EXSET.deck } : EXSET.type === 'unit' ? { type: 'unit', u: EXSET.u } : { type: 'range', u: EXSET.u, g1: EXSET.g1, g2: EXSET.g2 };
   let ids = exScopeIds(sc);
   if (EXSET.skip) ids = ids.filter(id => !['master', 'known'].includes(status(id)));
   if (!ids.length) { toast('Bu kapsamda öğrenilecek kelime kalmadı'); return; }
@@ -104,12 +110,12 @@ function exRender() {
     const w = BYID[E.ids[E.pos]]; v.className = 'view u' + w.u;
     const inBatch = E.batch.length + 1, size = E.opt.size;
     const showAll = !E.opt.reveal || EXR.revealed;
-    v.innerHTML = exHeader('Öğren', `Parti ${E.st.batches + 1} · ${inBatch}/${size} · ${lineName(w.u)} · Durak ${w.g}`) + `
+    v.innerHTML = exHeader('Öğren', `Parti ${E.st.batches + 1} · ${inBatch}/${size} · ${DECKS[w.deck].name} · ${lineName(w.u)} · Durak ${w.g}`) + `
       <div class="ticket" id="tk">
         <div class="tk-top"><span class="tk-no">N° ${w.id} · ${STATUS_TR[status(w.id)]}</span><span class="stage">${Array.from({ length: Math.min(size, 30) }, (_, i) => `<i class="${i < inBatch - 1 ? 'on' : ''}" style="width:7px;height:7px"></i>`).join('')}</span></div>
         <div class="w-head"><div class="bigword" lang="fr">${esc(w.fr)}</div><button class="speak" data-say="fr" data-id="${w.id}" aria-label="Telaffuzu dinle">${IC('speak')}</button></div>
-        ${showAll ? wordInfo(w) : `<div class="exbox" style="margin-top:18px"><div style="min-width:0;flex:1"><div class="fr">${exHTML(w.ex)}</div></div><button class="speak sm" data-say="ex" data-id="${w.id}" aria-label="Örnek cümleyi dinle">${IC('speak', 'sm')}</button></div>
-          <p class="q-prompt-label" style="margin-top:20px">Anlamını hatırlamaya çalış, sonra aç.</p>`}
+        ${showAll ? wordInfo(w) : `<div class="exbox" style="margin-top:18px"><div style="min-width:0;flex:1"><div class="fr" lang="fr">${exHTML(w.ex)}</div></div><button class="speak sm" data-say="ex" data-id="${w.id}" aria-label="Örnek cümleyi dinle">${IC('speak', 'sm')}</button></div>
+          <p class="q-prompt-label" style="margin-top:20px">Tanımını, eş ve zıt anlamlılarını hatırlamaya çalış, sonra aç.</p>`}
       </div>
       ${showAll ? `<div class="decide"><button class="btn ghost" data-exlearn="new">${IC('plus')}Yeni öğrendim</button><button class="btn ok" data-exlearn="knew">${IC('check')}Biliyordum</button></div>
         <p class="kbd">← yeni öğrendim · → biliyordum</p>`
@@ -126,21 +132,16 @@ function exRender() {
   if (!EXR.q || EXR.qid !== head.id) { EXR.q = makeQ(w, 'practice'); EXR.qid = head.id; EXR.answered = false; }
   v.className = 'view u' + w.u;
   const left = E.q.length, retry = !head.first;
-  // questionCard SES'e bağlı; burada eşdeğerini kuruyoruz
   const q = EXR.q;
-  let prompt = '';
-  if (q.type === 'fr2tr') prompt = `<div class="w-head"><div class="bigword">${esc(w.fr)}</div><button class="speak" data-say="fr" data-id="${w.id}" aria-label="Telaffuzu dinle">${IC('speak')}</button></div>`;
-  else if (q.type === 'tr2fr') prompt = `<div class="q-prompt-label">Türkçesi</div><div class="mid">${esc(w.trMain)}</div>`;
-  else if (q.type === 'def2fr') prompt = `<div class="q-prompt-label">${w.anti ? 'Hangisinin zıt anlamlısı?' : 'Fransızca tanım'}</div><div class="mid">${w.anti ? '≠ ' : '≈ '}${esc(w.def)}</div>`;
-  else prompt = `<div class="q-prompt-label">Cümleyi tamamla</div><div class="cloze">${esc(w.ex).replace(/\[[^\]]+\]/, '<span class="gap">&nbsp;</span>')}</div>`;
-  const opts = `<div class="opts">${q.options.map((o, i) => `<button class="opt ${EXR.answered ? (o.ok ? 'ok' : o.picked ? 'no' : 'dim') : ''}" data-exopt="${i}" ${EXR.answered ? 'disabled' : ''}><span class="k">${i + 1}</span>${esc(o.text)}</button>`).join('')}</div>`;
+  const prompt = qPromptHTML(q);
+  const opts = `<div class="opts">${q.options.map((o, i) => `<button class="opt ${EXR.answered ? (o.ok ? 'ok' : o.picked ? 'no' : 'dim') : ''}" data-exopt="${i}" ${EXR.answered ? 'disabled' : ''} lang="fr"><span class="k">${i + 1}</span>${esc(o.text)}</button>`).join('')}</div>`;
   const fb = EXR.answered ? `<div class="fb" role="status"><div class="fb-h">${EXR.ok ? '<span class="badge-ok">Doğru</span>' : '<span class="badge-no">Yanlış</span>'}<span class="faint" style="font-size:.95rem">${EXR.ok ? (retry ? 'Bu sefer tamam' : '') : 'Bu kelime testin sonunda yeniden sorulacak'}</span></div>
-      <div class="w-head"><div class="mid">${esc(w.fr)}</div><button class="speak sm" data-say="fr" data-id="${w.id}" aria-label="Telaffuzu dinle">${IC('speak', 'sm')}</button></div>${wordInfo(w)}</div>` : '';
+      <div class="w-head"><div class="mid" lang="fr">${esc(w.fr)}</div><button class="speak sm" data-say="fr" data-id="${w.id}" aria-label="Telaffuzu dinle">${IC('speak', 'sm')}</button></div>${wordInfo(w, { tight: true })}</div>` : '';
   const sub = E.phase === 'final' ? `${E.fin.asked} soru cevaplandı · kalan ${left}` : `Kalan ${left} soru${E.phase === 'check' ? ' · parti ' + (E.st.batches + 1) : ''}`;
   v.innerHTML = exHeader(EX_PHASE_TR[E.phase] + (retry ? ' · tekrar' : ''), sub) + `
     <div class="ticket" id="tk"><div class="tk-top"><span class="tk-no">${QTYPES_TR[q.type]}</span>${retry ? '<span class="pill hard">İkinci şans</span>' : ''}</div>${prompt}${opts}${fb}</div>
     ${EXR.answered ? `<div class="sess-actions"><button class="btn uc" data-exnext>Devam${IC('arrow')}</button></div><p class="kbd">Enter: devam</p>` : '<p class="kbd">Klavyede 1–4 ile seçebilirsin</p>'}`;
-  if (S.p.auto && q.type === 'fr2tr' && !EXR.answered) setTimeout(() => speak(speechText(w.fr)), 220);
+  if (S.p.auto && WORD_PROMPT.has(q.type) && !EXR.answered) setTimeout(() => speak(speechText(w.fr)), 220);
 }
 function exLearn(kind) {
   const E = exState(); if (!E || E.phase !== 'learn') return;
@@ -252,7 +253,8 @@ function exRenderResult() {
 document.addEventListener('click', e => {
   const t = e.target.closest('button'); if (!t) return;
   const d = t.dataset, E = exState();
-  if (d.exscope) { EXSET.type = d.exscope; if (d.u) EXSET.u = +d.u; if (EXSET.type === 'range') { EXSET.g1 = Math.min(EXSET.g1, NGROUPS[EXSET.u]); EXSET.g2 = Math.min(Math.max(EXSET.g2, EXSET.g1), NGROUPS[EXSET.u]); } renderExam(); return; }
+  if (d.exscope) { EXSET.type = d.exscope; if (d.u) EXSET.u = +d.u; if (d.dk) { EXSET.deck = d.dk; EXSET.u = DECKS[d.dk].units[0]; } if (EXSET.type === 'range') { EXSET.g1 = Math.min(EXSET.g1, NGROUPS[EXSET.u]); EXSET.g2 = Math.min(Math.max(EXSET.g2, EXSET.g1), NGROUPS[EXSET.u]); } renderExam(); return; }
+  if (d.exdeck) { const dk = d.exdeck; closeSheet(); if (E && E.phase !== 'done' && exScopeDeck(E.scope) === dk) { exRun(); return; } exSetDeck(dk); show('exam'); return; }
   if (d.exset) { const v = d.val; EXSET[d.exset] = v === 'true' ? true : v === 'false' ? false : +v; renderExam(); return; }
   if (d.exgo) {
     const g = d.exgo;

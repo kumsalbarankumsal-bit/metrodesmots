@@ -1,7 +1,8 @@
 'use strict';
 /* =====================================================================
    MÉTRO DES MOTS — Stüdyo
-   Çalışma seti seçimi + 17 mod. Her mod: start · view · after · act · key · summary.
+   Çalışma seti seçimi (önce deste) + 17 mod. Her mod: start · view · after · act · key · summary.
+   Bütün modlar Fransızca–Fransızcadır: tanım, eş ve zıt anlamlılar; Türkçe yalnızca destek.
    Stüdyo modları takvimi bozmaz; yalnızca Öğren (ve Kartlar sonunda isteğe bağlı)
    biten yeni kelimeleri aralıklı tekrar listesine ekler.
    ===================================================================== */
@@ -13,20 +14,21 @@ const ST_GROUPS = [
   { k: 'oyun', tr: 'Oyunlar', fr: 'Jouer', d: 'Hız ve dikkat; tanımayı otomatikleştirir. Rekorlar sete göre tutulur.', modes: ['match', 'memory', 'eclair', 'metro'] },
   { k: 'derin', tr: 'Kalıcı yap', fr: 'Ancrer', d: 'Kendi bağlantını kur; cinsiyeti ve telaffuzu oturt.', modes: ['atelier', 'genre', 'speak'] }
 ];
-const ST_SRC = [['y1', '1. Yazılı'], ['u1', 'Hat 1'], ['u2', 'Hat 2'], ['u3', 'Hat 3'], ['u4', 'Hat 4'], ['due', 'Tekrarı gelenler'], ['hard', 'Zorlu'], ['fav', 'Yıldızlı'], ['mine', 'Öğrendiklerim']];
+const ST_FILTERS = [['due', 'Tekrarı gelenler'], ['hard', 'Zorlu'], ['fav', 'Yıldızlı'], ['mine', 'Öğrendiklerim']];
 
-/* ---------- set ---------- */
-function stSet() { if (!S.p.st || typeof S.p.st !== 'object') S.p.st = { src: 'y1', g: 0, size: 20, order: 'smart' }; return S.p.st; }
-function stUnitOf(sel) { return sel.src === 'y1' ? 5 : /^u[1-4]$/.test(sel.src) ? +sel.src[1] : 0; }
+/* ---------- set: önce deste, sonra o destenin içinden kaynak (bütün deste · bir hat · tekrarı gelenler …) ---------- */
+function stSet() { if (!S.p.st || typeof S.p.st !== 'object') S.p.st = { deck: curDeck(), src: 'all', g: 0, size: 20, order: 'smart' }; return stNormalize(S.p.st); }
+function stUnitOf(sel) { if (sel.deck === 'y1') return sel.src === 'all' ? 5 : 0; const m = /^u(\d)$/.exec(sel.src || ''); return m ? +m[1] : 0; }
 function stBase(sel) {
+  const dk = DECKS[sel.deck] ? sel.deck : 'y1', D = DECK_WORDS[dk];
   let ws;
-  if (sel.src === 'y1') ws = DECK_WORDS.y1;
-  else if (/^u[1-4]$/.test(sel.src)) ws = UNIT_WORDS[+sel.src[1]];
-  else if (sel.src === 'due') ws = dueList();
-  else if (sel.src === 'hard') ws = W.filter(w => isHard(w.id));
-  else if (sel.src === 'fav') ws = W.filter(w => S.f[w.id]);
-  else if (sel.src === 'mine') ws = W.filter(w => ['learn', 'master'].includes(status(w.id)));
-  else ws = DECK_WORDS.y1;
+  const m = /^u(\d)$/.exec(sel.src || '');
+  if (m && DECKS[dk].units.includes(+m[1])) ws = UNIT_WORDS[+m[1]];
+  else if (sel.src === 'due') ws = dueList(null, dk);
+  else if (sel.src === 'hard') ws = D.filter(w => isHard(w.id));
+  else if (sel.src === 'fav') ws = D.filter(w => S.f[w.id]);
+  else if (sel.src === 'mine') ws = D.filter(w => ['learn', 'master'].includes(status(w.id)));
+  else ws = D;
   const u = stUnitOf(sel);
   if (u && sel.g) ws = ws.filter(w => w.g === sel.g);
   return ws;
@@ -39,10 +41,15 @@ function stOrdered(ws, order) {
   return [...shuffle(b[0]), ...shuffle(b[1]), ...b[2].sort((x, y) => stageOf(x.id) - stageOf(y.id)), ...b[3].sort((x, y) => x.i - y.i), ...shuffle(b[4]), ...shuffle(b[5])];
 }
 function stLabel(sel) {
-  const u = stUnitOf(sel), name = (ST_SRC.find(x => x[0] === sel.src) || ST_SRC[0])[1];
-  return u && sel.g ? `${name} · Durak ${sel.g} · ${stationName(u, sel.g)}` : name;
+  const dk = DECKS[sel.deck] ? sel.deck : 'y1', u = stUnitOf(sel), f = ST_FILTERS.find(x => x[0] === sel.src);
+  let t = DECKS[dk].name;
+  if (u && u !== 5) t += ' · ' + lineName(u);
+  else if (f) t += ' · ' + f[1];
+  else if (dk !== 'y1') t += ' · bütün deste';
+  return u && sel.g ? `${t} · Durak ${sel.g} · ${stationName(u, sel.g)}` : t;
 }
-function stKey(sel) { return sel.src + (sel.g ? '-' + sel.g : ''); }
+/* rekor anahtarı (eski kayıtlarla uyumlu: 'y1', 'u3' …) */
+function stKey(sel) { const u = stUnitOf(sel), base = u ? (u === 5 ? 'y1' : 'u' + u) : sel.src === 'all' ? sel.deck : sel.deck + '-' + sel.src; return base + (sel.g ? '-' + sel.g : ''); }
 function stOpt(k, def) { S.p.mo = S.p.mo || {}; const o = Object.assign({}, def, S.p.mo[k] || {}); S.p.mo[k] = o; return o; }
 function stBest(P, val, lowerBetter) {
   const key = P.k + ':' + stKey(P.sel), cur = S.p.best[key];
@@ -53,17 +60,14 @@ function stBest(P, val, lowerBetter) {
 
 /* ---------- ortak parçalar ---------- */
 function spk(w, sm) { return `<button class="speak ${sm ? 'sm' : ''}" data-say="fr" data-id="${w.id}" aria-label="Telaffuzu dinle">${IC('speak', sm ? 'sm' : '')}</button>`; }
-function qPrompt(q) {
-  const w = q.w;
-  if (q.type === 'fr2tr') return `<div class="q-prompt-label">Anlamı ne?</div><div class="w-head"><div class="bigword" lang="fr">${esc(w.fr)}</div>${spk(w)}</div>`;
-  if (q.type === 'tr2fr') return `<div class="q-prompt-label">Fransızcası hangisi?</div><div class="mid">${esc(w.trMain)}</div>`;
-  if (q.type === 'def2fr') return `<div class="q-prompt-label">${w.anti ? 'Hangisinin zıt anlamlısı?' : 'Tanıma uyan kelime'}</div><div class="mid" lang="fr">${w.anti ? '≠ ' : '≈ '}${esc(w.def)}</div>`;
-  if (q.type === 'cloze') return `<div class="q-prompt-label">Boşluğu doldur</div><div class="cloze" lang="fr">${esc(w.ex).replace(/\[[^\]]+\]/, '<span class="gap">&nbsp;</span>')}</div>`;
-  return `<div class="q-prompt-label">Fransızcasını yaz</div><div class="mid">${esc(w.trMain)}</div>`;
-}
+function qPrompt(q) { return qPromptHTML(q); }
 function qOpts(q, ans, act) {
-  const fr = q.type !== 'fr2tr';
-  return `<div class="opts">${q.options.map((o, i) => `<button class="opt ${ans ? (o.ok ? 'ok' : o.picked ? 'no' : 'dim') : ''}" data-pl="${act}" data-k="${i}" ${ans ? 'disabled' : ''} ${fr ? 'lang="fr"' : ''}><span class="k">${i + 1}</span>${esc(o.text)}</button>`).join('')}</div>`;
+  return `<div class="opts">${q.options.map((o, i) => `<button class="opt ${ans ? (o.ok ? 'ok' : o.picked ? 'no' : 'dim') : ''}" data-pl="${act}" data-k="${i}" ${ans ? 'disabled' : ''} lang="fr"><span class="k">${i + 1}</span>${esc(o.text)}</button>`).join('')}</div>`;
+}
+/* yazma modlarında ipucu kutusu: tanım (yoksa eş/zıt anlamlı) + Türkçe her zaman açıksa */
+function clueHTML(w, max) {
+  const c = typeClue(w);
+  return `<div class="mid qclue" lang="fr">${c.sym ? `<span class="qsym">${c.sym}</span>` : ''}<span>${esc(max ? cut(c.t, max) : c.t)}</span></div>${trMode() === 'always' ? `<p class="trhint">${esc(w.tr)}</p>` : ''}`;
 }
 function typeBox(P, ph) {
   return `<div class="typein"><input id="plIn" class="pl-in" type="text" lang="fr" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${ph || 'Fransızca yaz…'}" ${P.ans ? `disabled value="${esc(P.typed || '')}"` : ''} aria-label="Cevabın"><button class="btn" data-pl="check" ${P.ans ? 'disabled' : ''}>Kontrol et</button></div>${P.ans ? '' : accentsHTML('plIn')}`;
@@ -101,7 +105,7 @@ let PL = null;
 function stLaunch(k, over) {
   over = over || {};
   const M = MODES[k]; if (!M) return;
-  const sel = Object.assign({}, stSet(), over.set || {});
+  const sel = stNormalize(Object.assign({}, stSet(), over.set || {}));
   if (over.persist) { Object.assign(stSet(), over.set || {}); touch(); }
   if (k === 'exam') { stExam(sel); return; }
   if (M.need === 'tts' && !TTS.ok) { toast('Bu cihazda sesli okuma yok; Dikte için Chrome ya da Samsung Internet dene'); return; }
@@ -122,9 +126,9 @@ function stLaunch(k, over) {
 }
 function stExam(sel) {
   const u = stUnitOf(sel);
-  if (!u) { EXSET.type = 'unit'; EXSET.u = 5; }
-  else if (sel.g) { EXSET.type = 'range'; EXSET.u = u; EXSET.g1 = EXSET.g2 = sel.g; }
-  else { EXSET.type = 'unit'; EXSET.u = u; }
+  if (u && sel.g) { EXSET.type = 'range'; EXSET.u = u; EXSET.g1 = EXSET.g2 = sel.g; }
+  else if (u) { EXSET.type = 'unit'; EXSET.u = u; }
+  else exSetDeck(sel.deck);
   closeSheet(); show('exam');
 }
 function plStop() {
@@ -135,8 +139,8 @@ function plStop() {
 }
 function plRender() {
   if (!PL) return;
-  const v = $('#v-play'), u = stUnitOf(PL.sel) || (PL.words[0] && PL.words[0].u) || 5;
-  v.className = `view play u${u} m-${PL.k}`;
+  const v = $('#v-play'), u = stUnitOf(PL.sel);
+  v.className = `view play ${u ? 'u' + u : DECKS[PL.sel.deck] ? DECKS[PL.sel.deck].cls : 'u5'} m-${PL.k}`;
   v.innerHTML = plHeader() + (PL.done ? plSummaryHTML() : PL.M.view(PL));
   if (!PL.done && PL.M.after) PL.M.after(PL);
 }
@@ -218,19 +222,20 @@ const MODES = {};
 /* ---------- Kartlar ---------- */
 MODES.cards = {
   tr: 'Kartlar', fr: 'Cartes', ic: 'cards', grp: 'tanis', anim: 'cards', ill: '<i class="c1"></i><i class="c2"></i>',
-  why: 'Önce hatırlamaya çalış, sonra çevir. Bilmediğin kartlar yeni turda yeniden gelir.',
+  why: 'Önce hatırlamaya çalış, sonra çevir: arkada tanım, eş ve zıt anlamlılar. Bilmediğin kartlar yeni turda yeniden gelir.',
   start(P) { P.o = stOpt('cards', { front: 'fr' }); P.deck = shuffle(P.words.slice()); P.i = 0; P.round = 1; P.again = []; P.known = new Set(); P.first = new Set(); P.flip = false; },
   progress: P => P.known.size / P.words.length,
   hud: P => `<span class="hud" id="plHud">${P.round}. tur · ${P.deck.length - P.i} kart</span>`,
   view(P) {
     const w = P.deck[P.i], fr = P.o.front === 'fr';
     const frFace = `<div class="fl-top"><span class="tk-no">N° ${w.id}</span>${genderChip(w)}</div><div class="fl-mid"><div class="bigword" lang="fr">${esc(w.fr)}</div></div><div class="fl-bot">${spk(w)}<span class="faint">çevirmek için dokun</span></div>`;
-    const trFace = `<div class="fl-top"><span class="tk-no">Türkçesi</span></div><div class="fl-mid"><div class="mid">${esc(w.trMain)}</div><p class="muted" lang="fr" style="margin-top:8px">${w.anti ? '≠ ' : '≈ '}${esc(w.def)}</p></div><div class="fl-bot"><span class="faint">Fransızcası ne? Çevir</span></div>`;
-    const back = `<div class="fl-top"><span class="tk-no">${fr ? 'Anlamı' : 'Fransızcası'}</span>${genderChip(w)}</div>${fr ? '' : `<div class="w-head"><div class="bigword" lang="fr">${esc(w.fr)}</div>${spk(w)}</div>`}${wordInfo(w, { tight: true })}`;
-    return `<div class="pl-tools"><div class="seg" role="group" aria-label="Kartın ön yüzü"><button data-pl="front" data-v="fr" aria-pressed="${fr}">Ön yüz Fransızca</button><button data-pl="front" data-v="tr" aria-pressed="${!fr}">Ön yüz Türkçe</button></div></div>
+    const X = fxOf(w), hint = X.def && X.syn.length ? `<p class="muted" lang="fr" style="margin-top:8px">≈ ${esc(X.syn.slice(0, 3).map(o => o.t).join(' · '))}</p>` : X.def && X.ant.length ? `<p class="muted" lang="fr" style="margin-top:8px">≠ ${esc(X.ant.slice(0, 2).map(o => o.t).join(' · '))}</p>` : '';
+    const defFace = `<div class="fl-top"><span class="tk-no">Tanım</span></div><div class="fl-mid">${clueHTML(w)}${hint}</div><div class="fl-bot"><span class="faint">Hangi kelime? Çevir</span></div>`;
+    const back = `<div class="fl-top"><span class="tk-no">${fr ? 'Tanım · eş · zıt' : 'Kelime'}</span>${genderChip(w)}</div>${fr ? '' : `<div class="w-head"><div class="bigword" lang="fr">${esc(w.fr)}</div>${spk(w)}</div>`}${wordInfo(w, { tight: true })}`;
+    return `<div class="pl-tools"><div class="seg" role="group" aria-label="Kartın ön yüzü"><button data-pl="front" data-v="fr" aria-pressed="${fr}">Ön yüz: kelime</button><button data-pl="front" data-v="def" aria-pressed="${!fr}">Ön yüz: tanım</button></div></div>
       <div class="flash ${P.flip ? 'flip' : ''}" id="flash" data-pl="flip" role="button" tabindex="0" aria-label="Kartı çevir">
         <span class="swipe-tag l">TEKRAR</span><span class="swipe-tag r">BİLİYORUM</span>
-        <div class="flash-in"><div class="flash-face f">${fr ? frFace : trFace}</div><div class="flash-face b">${back}</div></div>
+        <div class="flash-in"><div class="flash-face f">${fr ? frFace : defFace}</div><div class="flash-face b">${back}</div></div>
       </div>
       <div class="decide"><button class="btn ghost" data-pl="no">${IC('review')}Tekrar gelsin</button><button class="btn ok" data-pl="yes">${IC('check')}Biliyorum</button></div>
       <p class="kbd">Boşluk: çevir · ← tekrar gelsin · → biliyorum · kartı kaydırabilirsin</p>`;
@@ -279,7 +284,7 @@ function cardsDecide(P, yes) {
 /* ---------- Öğren ---------- */
 MODES.learn = {
   tr: 'Öğren', fr: 'Apprendre', ic: 'learn', grp: 'tanis', anim: 'steps', ill: '<i></i><i></i><i></i>',
-  why: 'Her kelime üç basamaktan geçer: tanı, seç, yaz. Bitenler aralıklı tekrar listene girer.',
+  why: 'Her kelime üç basamaktan geçer: tanımını tanı, kelimeyi seç, tanımdan yaz. Bitenler aralıklı tekrar listene girer.',
   start(P) {
     P.lv = {}; P.miss = {}; P.words.forEach(w => { P.lv[w.id] = 0; P.miss[w.id] = 0; });
     P.queue = P.words.slice(); P.active = []; P.recent = []; P.finished = []; P.added = 0;
@@ -291,20 +296,20 @@ MODES.learn = {
     const q = P.q, w = q.w, Lc = Math.max(0, Math.min(2, P.qL || 0));
     const strip = P.active.concat(P.finished.slice(-3)).map(x => `<i class="lv${Math.min(3, P.lv[x.id])} ${x === w ? 'cur' : ''}" title="${esc(cleanTerm(x.fr))}"></i>`).join('');
     let body;
-    if (q.type === 'type') body = typeBox(P) + (P.ans ? '' : `<div class="row" style="margin-top:8px"><span class="faint" style="font-weight:700">İpucu: «${esc(spellTarget(w).charAt(0))}…» · ${w.anti ? 'zıttı ' : ''}${esc(trunc(w.def, 60))}</span><span class="spacer"></span><button class="linkbtn" data-pl="idk">Bilmiyorum</button></div>`);
+    if (q.type === 'type') body = typeBox(P) + (P.ans ? '' : `<div class="row" style="margin-top:8px"><span class="spacer"></span><button class="linkbtn" data-pl="idk">Bilmiyorum</button></div>`);
     else body = qOpts(q, P.ans, 'opt');
     const extra = q.type === 'type' && P.typed && (!P.ok1 || P.near) ? `<p>Doğrusu: <b lang="fr">${diffHTML(P.typed, spellTarget(w))}</b></p>` : '';
     return `<div class="lv-strip" aria-label="Çalışılan kelimeler ve basamakları">${strip}</div>
       <div class="ticket ${P.ans ? '' : 'enter'}" id="tk">${P.ans && P.ok1 ? '<i class="punch" aria-hidden="true"></i>' : ''}
         <div class="tk-top"><span class="tk-no">${['Tanı', 'Seç', 'Yaz'][Lc]} · basamak ${Lc + 1}/3</span><span class="stage">${[0, 1, 2].map(i => `<i class="${i < P.lv[w.id] ? 'on' : ''}"></i>`).join('')}</span></div>
         ${qPrompt(q)}${body}
-        ${P.ans ? (P.ok1 && !P.near ? `<div class="fb good slim" role="status"><div class="fb-h"><span class="badge-ok">Doğru</span><span class="faint" style="font-size:.95rem">${esc(P.note)}</span></div><p class="faint" style="font-weight:700"><span lang="fr">${esc(w.fr)}</span> · ${esc(w.trMain)}</p></div>` : fbBlock(P, w, extra)) : ''}
+        ${P.ans ? (P.ok1 && !P.near ? `<div class="fb good slim" role="status"><div class="fb-h"><span class="badge-ok">Doğru</span><span class="faint" style="font-size:.95rem">${esc(P.note)}</span></div><p class="faint" style="font-weight:700" lang="fr">${esc(frHead(w))} <span class="lsym">${w.anti ? '≠' : '='}</span> ${esc(listText(w))}</p>${trMode() === 'always' ? `<p class="trhint">${esc(w.tr)}</p>` : ''}</div>` : fbBlock(P, w, extra)) : ''}
       </div>
       ${P.ans ? nextBtns(P) : `<p class="kbd">${q.type === 'type' ? 'Enter: kontrol et' : '1–4 ile seçebilirsin'}</p>`}`;
   },
   after(P) {
     focusIn();
-    if (S.p.auto && P.q.type === 'fr2tr' && !P.ans) { const w = P.q.w; P.tm.push(setTimeout(() => { if (PL === P && P.q.w === w && !P.ans) speak(speechText(w.fr)); }, 220)); }
+    if (S.p.auto && WORD_PROMPT.has(P.q.type) && !P.ans) { const w = P.q.w; P.tm.push(setTimeout(() => { if (PL === P && P.q.w === w && !P.ans) speak(speechText(w.fr)); }, 220)); }
   },
   act(P, a, t) {
     if (a === 'opt' && !P.ans) { const o = P.q.options[+t.dataset.k]; if (!o) return; o.picked = true; P.typed = null; P.near = false; P.canOv = false; learnAnswer(P, o.ok); plRender(); plFx($(`[data-pl="opt"][data-k="${t.dataset.k}"]`), o.ok, o.ok ? 3 : 0); if (o.ok) learnAuto(P, 800); return; }
@@ -329,9 +334,10 @@ MODES.learn = {
   summary(P, early) {
     const acc = PL.ok + PL.no ? Math.round(PL.ok / (PL.ok + PL.no) * 100) : 0;
     const hard = P.words.filter(w => P.miss[w.id] >= 2).length;
-    const ny = P.over && P.over.only === 'new' && P.sel.src === 'y1' ? nextStation(5, [5]) : null;
+    const dk = DECKS[P.sel.deck] ? P.sel.deck : 'y1';
+    const ny = P.over && P.over.only === 'new' && !early ? nextStation(dk === 'y1' ? 5 : (stUnitOf(P.sel) || deckLine(dk)), DECKS[dk].units) : null;
     return { title: early ? 'Mola' : 'Öğrendin !', big: `${P.finished.length}/${P.words.length}`, sub: 'kelime üç basamağı da geçti',
-      btns: ny && !early ? `<button class="btn u5 uc" data-run="y1-learn">${IC('arrow')}Sonraki durak: ${esc(stationName(5, ny.g))}</button>` : '',
+      btns: ny ? `<button class="btn uc" data-run="learn:${dk}">${IC('arrow')}Sonraki durak: ${esc(DECKS[dk].name)} · ${esc(stationName(ny.u, ny.g))}</button>` : '',
       rows: [['Doğruluk', '%' + acc], ['Listene giren', P.added], ['Zorlandığın', hard], ['Süre', fmtTime(Date.now() - P.t0)]],
       note: P.added ? `${P.added} kelime aralıklı tekrar listene girdi; ilk tekrarları yarın. Tekrarları yaptıkça 3 gün, 1 hafta, 2 hafta ve 1 ay sonra yeniden gelecekler.` : (early ? 'Kaldığın kelimeler bir dahaki Öğren oturumunda yine önüne gelir.' : ''),
       againLabel: 'Aynı kelimelerle yeniden', confetti: !early && P.finished.length >= 5 ? 120 : 0 };
@@ -344,7 +350,10 @@ function learnNext(P) {
   const minL = Math.min(...cand.map(w => P.lv[w.id]));
   const pool = cand.filter(w => P.lv[w.id] <= minL + (Math.random() < .3 ? 1 : 0));
   const w = pick(pool), L = P.lv[w.id];
-  const type = L === 0 ? 'fr2tr' : L === 1 ? (w.anti || Math.random() < .55 ? 'tr2fr' : 'def2fr') : (typeable(w) ? 'type' : clozeable(w) ? 'cloze' : 'def2fr');
+  const X = fxOf(w), seeT = ['def2fr', 'syn2fr', 'ant2fr'].filter(t => qAvail(w, t));
+  const type = L === 0 ? (X.def && !X.defL && Math.random() < .5 ? 'fr2def' : 'list')
+    : L === 1 ? (seeT.length ? pick(seeT) : 'list')
+    : (qAvail(w, 'type') ? 'type' : qAvail(w, 'cloze') ? 'cloze' : seeT.length ? pick(seeT) : 'list');
   P.q = makeQ(w, 'practice', type); P.qL = L; P.ans = false; P.typed = null; P.near = false; P.canOv = false; P.note = '';
   P.recent.push(w.id); if (P.recent.length > 2) P.recent.shift();
   return true;
@@ -360,7 +369,7 @@ function learnDone(P, w) {
 function learnAnswer(P, ok) {
   const w = P.q.w;
   P.ans = true; P.ok1 = ok;
-  if (ok) { P.lv[w.id]++; if (P.lv[w.id] >= 3) { P.addedNote = false; learnDone(P, w); P.note = P.addedNote ? 'Tamam · tekrar listene girdi, ilk tekrar yarın' : 'Bu kelime tamam'; } else P.note = P.lv[w.id] === 1 ? 'Sırada: Fransızcasını seçmek' : 'Sırada: kendin yazmak'; }
+  if (ok) { P.lv[w.id]++; if (P.lv[w.id] >= 3) { P.addedNote = false; learnDone(P, w); P.note = P.addedNote ? 'Tamam · tekrar listene girdi, ilk tekrar yarın' : 'Bu kelime tamam'; } else P.note = P.lv[w.id] === 1 ? 'Sırada: tanımdan kelimeyi seçmek' : 'Sırada: tanımdan kendin yazmak'; }
   else { P.lv[w.id] = Math.max(0, P.lv[w.id] - 1); P.miss[w.id]++; P.note = 'Bir basamak geri; birazdan yeniden gelecek'; }
   plScore(ok, w, { xp: ok ? 3 : 0, hard: true });
 }
@@ -370,7 +379,7 @@ function learnGo(P) { if (learnNext(P)) plRender(); }
 /* ---------- Yaz ---------- */
 MODES.write = {
   tr: 'Yaz', fr: 'Écrire', ic: 'type', grp: 'yaz', anim: 'type', ill: '<i class="ln"></i><i class="cur"></i>', elig: w => typeable(w),
-  why: 'Fransızcasını kendin yaz. Kendin üretmek, seçenekten tanımaktan çok daha kalıcıdır.',
+  why: 'Tanımı oku, kelimeyi kendin yaz. Kendin üretmek, seçenekten tanımaktan çok daha kalıcıdır.',
   start(P) { P.list = P.words.slice(); P.i = 0; P.first = new Set(); P.tries = {}; P.hint = 0; P.ans = false; },
   progress: P => P.i / P.list.length,
   hud: P => `<span class="hud" id="plHud">${Math.min(P.i + 1, P.list.length)}/${P.list.length}</span>`,
@@ -379,9 +388,9 @@ MODES.write = {
     const mask = [...tgt].map((ch, k) => /[\s’'\-.]/.test(ch) ? ch : k < P.hint ? ch : '·').join('');
     const extra = P.ans && P.typed && (!P.ok1 || P.near) ? `<p>Doğrusu: <b lang="fr">${diffHTML(P.typed, tgt)}</b></p>` : '';
     return `<div class="ticket ${P.ans ? '' : 'enter'}" id="tk">${P.ans && P.ok1 ? '<i class="punch" aria-hidden="true"></i>' : ''}
-      <div class="tk-top"><span class="tk-no">Fransızcasını yaz</span>${P.tries[w.id] ? '<span class="pill hard">Yeniden</span>' : ''}</div>
-      <div class="mid">${esc(w.trMain)}</div>
-      <p class="muted" lang="fr" style="margin-top:6px">${w.anti ? '≠ ' : '≈ '}${esc(w.def)}</p>
+      <div class="tk-top"><span class="tk-no">Kelimeyi yaz</span>${P.tries[w.id] ? '<span class="pill hard">Yeniden</span>' : ''}</div>
+      ${clueHTML(w)}
+      ${fxOf(w).defL ? '' : `<p class="muted" lang="fr" style="margin-top:6px">${w.anti ? '≠ ' : '≈ '}${esc(listText(w))}</p>`}
       ${P.hint && !P.ans ? `<p class="hintmask" lang="fr">${esc(mask)}</p>` : ''}
       ${typeBox(P)}
       ${P.ans ? fbBlock(P, w, extra) : `<div class="row" style="margin-top:8px"><button class="linkbtn" data-pl="hint">İpucu: bir harf aç</button><span class="spacer"></span><button class="linkbtn" data-pl="idk">Bilmiyorum</button></div>`}
@@ -460,10 +469,10 @@ MODES.spell = {
     const tiles = c.tiles.map(t => `<button class="tile-l ${t.used ? 'used' : ''} ${c.mode === 'word' ? 'wd' : ''} ${hintCh && !t.used && t.ch === hintCh ? 'glow' : ''}" data-pl="tile" data-k="${t.id}" ${t.used || P.solved ? 'disabled' : ''} lang="fr">${esc(t.ch)}</button>`).join('');
     return `<div class="ticket" id="tk">${P.solved ? '<i class="punch" aria-hidden="true"></i>' : ''}
       <div class="tk-top"><span class="tk-no">${c.mode === 'word' ? 'Kelimeleri sırala' : 'Harfleri sırala'}</span><span class="faint" style="font-weight:700">${c.mis ? c.mis + ' hata' : ''}</span></div>
-      <div class="mid">${esc(w.trMain)}</div>
-      <p class="muted" lang="fr" style="margin-top:6px">${w.anti ? '≠ ' : '≈ '}${esc(trunc(w.def, 90))}</p>
+      ${clueHTML(w, 110)}
+      ${fxOf(w).defL ? '' : `<p class="muted" lang="fr" style="margin-top:6px">${w.anti ? '≠ ' : '≈ '}${esc(trunc(listText(w), 90))}</p>`}
       <div class="slots ${c.mode}" id="spSlots" lang="fr">${slots}</div>
-      ${P.solved ? `<div class="fb good slim"><div class="fb-h"><span class="badge-ok">${c.mis ? 'Tamam' : 'Hatasız'}</span>${spk(w, true)}</div><div class="exbox"><div style="flex:1;min-width:0"><div class="fr" lang="fr">${exHTML(w.ex)}</div><div class="tr">${esc(w.et)}</div></div></div></div>` : `<div class="tiles-l ${c.mode}">${tiles}</div>`}
+      ${P.solved ? `<div class="fb good slim"><div class="fb-h"><span class="badge-ok">${c.mis ? 'Tamam' : 'Hatasız'}</span>${spk(w, true)}</div><div class="exbox"><div style="flex:1;min-width:0"><div class="fr" lang="fr">${exHTML(w.ex)}</div>${trMode() === 'off' ? '' : `<div class="tr">${esc(w.et)}</div>`}</div></div></div>` : `<div class="tiles-l ${c.mode}">${tiles}</div>`}
     </div>
     ${P.solved ? nextBtns(P, P.i + 1 >= P.list.length ? 'Bitir' : 'Sonraki') : `<p class="kbd">${c.mode === 'word' ? 'Kelimelere doğru sırayla dokun' : 'Harflere sırayla dokun · klavyeyle de yazabilirsin'}</p>`}`;
   },
@@ -521,9 +530,9 @@ MODES.gap = {
     const input = P.ans ? `<span class="gapans ${P.ok1 ? 'ok' : 'no'}">${esc(P.typed || '—')}</span>${P.ok1 && !P.near ? '' : ` <span class="gapright">${esc(ansW)}</span>`}`
       : `<input id="plIn" class="pl-in gapin" type="text" lang="fr" autocomplete="off" autocapitalize="off" spellcheck="false" style="width:${Math.max(5, ansW.length + 2)}ch" aria-label="Boşluğa gelen kelime">`;
     return `<div class="ticket ${P.ans ? '' : 'enter'}" id="tk">${P.ans && P.ok1 ? '<i class="punch" aria-hidden="true"></i>' : ''}
-      <div class="tk-top"><span class="tk-no">Boşluğa uygun kelimeyi yaz</span><span class="faint" style="font-weight:700">aranan: ${esc(w.trMain)}</span></div>
+      <div class="tk-top"><span class="tk-no">Boşluğa uygun kelimeyi yaz</span><span class="faint gap-aim" lang="fr">aranan: ${typeClue(w).sym ? typeClue(w).sym + ' ' : ''}${esc(cut(typeClue(w).t, 64))}</span></div>
       <p class="gapline" lang="fr">${esc(m[1])}${input}${esc(m[3])}</p>
-      ${P.ans ? '' : `${accentsHTML('plIn')}<div class="row" style="margin-top:10px;gap:16px">${P.showTr ? `<span class="muted">${esc(w.et)}</span>` : '<button class="linkbtn" data-pl="tr">Cümlenin Türkçesi</button>'}${P.showW ? `<span class="faint" style="font-weight:700">sözlük hâli: <b lang="fr">${esc(w.fr)}</b></span>` : '<button class="linkbtn" data-pl="word">Kelimeyi göster</button>'}<span class="spacer"></span><button class="linkbtn" data-pl="idk">Bilmiyorum</button></div>
+      ${P.ans ? '' : `${accentsHTML('plIn')}<div class="row" style="margin-top:10px;gap:16px">${trMode() !== 'always' ? '' : P.showTr ? `<span class="muted">${esc(w.et)}</span>` : '<button class="linkbtn" data-pl="tr">Cümlenin Türkçesi</button>'}${P.showW ? `<span class="faint" style="font-weight:700">sözlük hâli: <b lang="fr">${esc(w.fr)}</b></span>` : '<button class="linkbtn" data-pl="word">Kelimeyi göster</button>'}<span class="spacer"></span><button class="linkbtn" data-pl="idk">Bilmiyorum</button></div>
         <div class="sess-actions"><button class="btn" data-pl="check">Kontrol et</button></div>`}
       ${P.ans ? fbBlock(P, w) : ''}
     </div>${P.ans ? nextBtns(P) : '<p class="kbd">Enter: kontrol et</p>'}`;
@@ -568,8 +577,8 @@ MODES.dict = {
     const extra = P.ans && P.typed && (!P.ok1 || P.near) ? `<p>Doğrusu: <b lang="fr">${diffHTML(P.typed, spellTarget(w))}</b></p>` : '';
     return `<div class="ticket ${P.ans ? '' : 'enter'}" id="tk">${P.ans && P.ok1 ? '<i class="punch" aria-hidden="true"></i>' : ''}
       <div class="tk-top"><span class="tk-no">Duyduğunu yaz</span>${P.tries[w.id] ? '<span class="pill hard">Yeniden</span>' : ''}</div>
-      <div class="dict-row"><button class="dict-play" data-pl="play" aria-label="Kelimeyi dinle">${IC('speak', 'lg')}</button><button class="btn sm ghost" data-pl="slow">Yavaş dinle</button>${P.ans ? '' : '<button class="linkbtn" data-pl="tr">Anlamını göster</button>'}</div>
-      ${P.showTr && !P.ans ? `<p class="muted" style="margin-top:8px">${esc(w.trMain)}</p>` : ''}
+      <div class="dict-row"><button class="dict-play" data-pl="play" aria-label="Kelimeyi dinle">${IC('speak', 'lg')}</button><button class="btn sm ghost" data-pl="slow">Yavaş dinle</button>${P.ans ? '' : '<button class="linkbtn" data-pl="tr">Tanımı göster</button>'}</div>
+      ${P.showTr && !P.ans ? `<div style="margin-top:8px">${clueHTML(w, 140)}</div>` : ''}
       ${typeBox(P, 'Duyduğunu yaz…')}
       ${P.ans ? fbBlock(P, w, extra) : '<div class="row" style="margin-top:8px"><span class="spacer"></span><button class="linkbtn" data-pl="idk">Bilmiyorum</button></div>'}
     </div>${P.ans ? nextBtns(P) : '<p class="kbd">Enter: kontrol et · tanımlıkları (le, la, un…) yazmak zorunda değilsin</p>'}`;
@@ -614,7 +623,7 @@ MODES.relevez = {
     return `<div class="ib-paper ticket ${P.ans ? '' : 'enter'}" id="tk">
       <div class="tk-top"><span class="tk-no" lang="fr">Paper 2 · question ${P.i + 1}</span>${P.tries[w.id] ? '<span class="pill hard">Yeniden</span>' : ''}</div>
       <p class="ib-q" lang="fr">Relevez dans la phrase le mot ou l’expression qui signifie${w.anti ? ' le contraire de' : ''} : <b>« ${esc(w.def)} »</b></p>
-      <p class="ib-help">${P.tr || P.ans ? `Türkçe ipucu: <b>${esc(w.trMain)}</b>` : '<button class="linkbtn" data-pl="tr">Türkçe ipucu</button>'} · cümlede doğru kelimeye dokun</p>
+      <p class="ib-help">${P.tr || P.ans ? `İpucu: <b lang="fr">${esc(fxOf(w).def && !fxOf(w).defL ? fxOf(w).def : '«' + bracketText(w).charAt(0) + '…» ile başlıyor')}</b>${trMode() === 'always' ? ` · ${esc(w.trMain)}` : ''}` : '<button class="linkbtn" data-pl="tr">İpucu</button>'} · cümlede doğru kelimeye dokun</p>
       <div class="ib-sent" lang="fr">${sent}</div>
       ${P.ans ? fbBlock(P, w, P.ok1 ? '' : `<p>Cevap: <b lang="fr">${esc(bracketText(w))}</b></p>`) : ''}
     </div>${P.ans ? nextBtns(P) : '<p class="kbd">Cümledeki kelimeye dokun</p>'}`;
@@ -637,55 +646,55 @@ MODES.relevez = {
   summary(P, early) { const n = new Set(P.list.slice(0, Math.max(1, P.i)).map(w => w.id)).size, pct = n ? Math.round(P.first / n * 100) : 0; return { title: early ? 'Ara verdin' : pct >= 85 ? 'Excellent !' : 'Bien relevé', fr: true, big: '%' + pct, sub: 'ilk denemede, ipucusuz bulduğun', rows: [['Soru', n], ['İlk denemede', P.first], ['Yanlış', PL.wrong.size], ['Süre', fmtTime(Date.now() - P.t0)]], confetti: !early && pct >= 90 && n >= 5 ? 110 : 0 }; }
 };
 
-/* ---------- Eş anlamlılar ---------- */
-function synQ(w) {
-  const mine = synonyms(w), mineN = new Set(mine.map(normT)), selfN = normT(cleanTerm(w.fr)), bk = baseKey(w);
+/* ---------- Eş & zıt anlamlılar ---------- */
+function synQ(w, kind) {
+  const X = fxOf(w);
+  let k = kind === 'syn' || kind === 'ant' ? kind : (X.syn.length && (!X.ant.length || Math.random() < .55) ? 'syn' : 'ant');
+  if (k === 'syn' && !X.syn.length) k = 'ant';
+  if (k === 'ant' && !X.ant.length) k = 'syn';
+  const mine = (k === 'syn' ? X.syn : X.ant).map(o => o.t);
   const correct = shuffle(mine.slice()).slice(0, Math.min(3, mine.length));
-  const pool = shuffle((UNIT_WORDS[w.u] || W).filter(c => c !== w && !c.anti && baseKey(c) !== bk));
-  const seen = new Set([...mineN, selfN]), ds = [], need = 6 - correct.length;
-  for (const c of pool) {
-    const cs = synonyms(c).map(normT);
-    if (!cs.length || cs.some(x => mineN.has(x)) || mineN.has(normT(cleanTerm(c.fr))) || cs.includes(selfN)) continue;
-    const opts = shuffle(synonyms(c).slice()).filter(s => !seen.has(normT(s)));
-    if (!opts.length) continue;
-    seen.add(normT(opts[0])); ds.push(opts[0]);
-    if (ds.length >= need) break;
-  }
-  return { w, opts: shuffle([...correct.map(t => ({ t, ok: true })), ...ds.map(t => ({ t, ok: false }))]) };
+  const other = k === 'syn' ? X.ant : X.syn;
+  const trap = other.length && (k === 'ant' || Math.random() < .5) ? [pick(other).t] : [];
+  const ds = textDistractors(w, 6 - correct.length - trap.length, c => (k === 'syn' ? fxOf(c).syn : fxOf(c).ant).map(o => o.t));
+  return { w, k, opts: shuffle([...correct.map(t => ({ t, ok: true })), ...trap.map(t => ({ t, ok: false, trap: true })), ...ds.map(t => ({ t, ok: false }))]) };
 }
 MODES.syn = {
-  tr: 'Eş anlamlılar', fr: 'Synonymes', ic: 'equal', grp: 'ib', anim: 'syn', ill: '<i class="p"></i><b>=</b><i class="p"></i>', elig: w => !w.anti && synonyms(w).length >= 1, min: 3,
-  why: 'Listedeki tanımlar sınavda eş anlamlı olarak sorulur; doğru olanların hepsini seç.',
-  start(P) { P.list = P.words.slice(); P.i = 0; P.q = synQ(P.list[0]); P.chosen = new Set(); P.ans = false; P.perfect = 0; },
+  tr: 'Eş & zıt anlam', fr: 'Synonymes · antonymes', ic: 'equal', grp: 'ib', anim: 'syn', ill: '<i class="p"></i><b>=</b><i class="p"></i>', elig: w => fxOf(w).syn.length + fxOf(w).ant.length > 0, min: 3,
+  why: 'Kelimenin bütün eş anlamlılarını ya da zıt anlamlılarını seç. Dikkat: zıt anlam sorusunda bir eş anlamlı tuzak olarak durabilir.',
+  start(P) { P.o = stOpt('syn', { kind: 'mix' }); P.list = P.o.kind === 'mix' ? P.words.slice() : P.words.filter(w => (P.o.kind === 'syn' ? fxOf(w).syn : fxOf(w).ant).length); if (!P.list.length) P.list = P.words.slice(); P.i = 0; P.q = synQ(P.list[0], P.o.kind); P.chosen = new Set(); P.ans = false; P.perfect = 0; },
   progress: P => P.i / P.list.length,
   hud: P => `<span class="hud" id="plHud">${P.i + 1}/${P.list.length}</span>`,
   view(P) {
-    const q = P.q, w = q.w;
-    const chips = q.opts.map((o, i) => { const s = P.chosen.has(i), cls = P.ans ? (o.ok && s ? 'ok' : o.ok ? 'missed' : s ? 'no' : 'dim') : s ? 'on' : ''; return `<button class="syn ${cls}" data-pl="sy" data-k="${i}" ${P.ans ? 'disabled' : ''} aria-pressed="${s}" lang="fr">${P.ans && o.ok && !s ? '<small>kaçırdın</small>' : ''}${esc(o.t)}</button>`; }).join('');
-    return `<div class="ticket ${P.ans ? '' : 'enter'}" id="tk">${P.ans && P.ok1 ? '<i class="punch" aria-hidden="true"></i>' : ''}
-      <div class="tk-top"><span class="tk-no">Eş anlamlılarını seç</span><span class="faint" style="font-weight:700">${q.opts.filter(o => o.ok).length > 1 && P.ans ? q.opts.filter(o => o.ok).length + ' doğru vardı' : ''}</span></div>
+    const q = P.q, w = q.w, nOk = q.opts.filter(o => o.ok).length;
+    const chips = q.opts.map((o, i) => { const s = P.chosen.has(i), cls = P.ans ? (o.ok && s ? 'ok' : o.ok ? 'missed' : s ? 'no' : 'dim') : s ? 'on' : ''; return `<button class="syn ${cls}" data-pl="sy" data-k="${i}" ${P.ans ? 'disabled' : ''} aria-pressed="${s}" lang="fr">${P.ans && o.ok && !s ? '<small>kaçırdın</small>' : P.ans && o.trap ? `<small>${q.k === 'ant' ? 'eş anlamlı' : 'zıt anlamlı'}</small>` : ''}${esc(o.t)}</button>`; }).join('');
+    const kseg = [['mix', 'Karışık'], ['syn', 'Eş anlamlı'], ['ant', 'Zıt anlamlı']].map(([k, t]) => `<button data-pl="sk" data-v="${k}" aria-pressed="${P.o.kind === k}">${t}</button>`).join('');
+    return `<div class="pl-tools"><div class="seg" role="group" aria-label="Soru türü">${kseg}</div></div>
+      <div class="ticket ${P.ans ? '' : 'enter'}" id="tk">${P.ans && P.ok1 ? '<i class="punch" aria-hidden="true"></i>' : ''}
+      <div class="tk-top"><span class="tk-no">${q.k === 'syn' ? 'Eş anlamlılarını seç' : 'Zıt anlamlılarını seç'}</span><span class="faint" style="font-weight:700">${nOk > 1 && P.ans ? nOk + ' doğru vardı' : ''}</span></div>
       <div class="w-head"><div class="bigword" lang="fr">${esc(w.fr)}</div>${spk(w)}</div>
-      <p class="muted" style="margin-top:4px">Hangileri aynı anlama gelir? Bir, iki ya da üç doğru olabilir.</p>
+      <p class="muted" style="margin-top:4px">${q.k === 'syn' ? 'Hangileri aynı anlama gelir (≈)?' : 'Hangileri zıt anlama gelir (≠)?'} Bir, iki ya da üç doğru olabilir.</p>
       <div class="syn-grid">${chips}</div>
       ${P.ans ? fbBlock(P, w) : ''}
     </div>
     ${P.ans ? nextBtns(P) : `<div class="sess-actions"><button class="btn" data-pl="sycheck" ${P.chosen.size ? '' : 'disabled'}>Kontrol et</button></div><p class="kbd">Seçeneklere dokun, sonra kontrol et</p>`}`;
   },
   act(P, a, t) {
+    if (a === 'sk') { P.o.kind = t.dataset.v; touch(); const done = P.i; MODES.syn.start(P); P.i = Math.min(done, P.list.length - 1); P.q = synQ(P.list[P.i], P.o.kind); plRender(); return; }
     if (a === 'sy' && !P.ans) { const k = +t.dataset.k; if (P.chosen.has(k)) P.chosen.delete(k); else P.chosen.add(k); t.classList.toggle('on'); t.setAttribute('aria-pressed', P.chosen.has(k)); const c = $('[data-pl="sycheck"]'); if (c) c.disabled = !P.chosen.size; haptic('tap'); return; }
     if (a === 'sycheck' && !P.ans && P.chosen.size) {
       const q = P.q, ok = q.opts.every((o, i) => o.ok === P.chosen.has(i));
-      const hits = q.opts.filter((o, i) => o.ok && P.chosen.has(i)).length, tot = q.opts.filter(o => o.ok).length;
-      P.ans = true; P.ok1 = ok; P.near = false; P.note = ok ? 'Hepsi doğru' : hits ? `${tot} doğrudan ${hits} tanesini buldun` : '';
+      const hits = q.opts.filter((o, i) => o.ok && P.chosen.has(i)).length, tot = q.opts.filter(o => o.ok).length, trapped = q.opts.some((o, i) => o.trap && P.chosen.has(i));
+      P.ans = true; P.ok1 = ok; P.near = false; P.note = ok ? 'Hepsi doğru' : trapped ? (q.k === 'ant' ? 'Tuzağa düştün: işaretlediğin biri eş anlamlı' : 'Tuzağa düştün: işaretlediğin biri zıt anlamlı') : hits ? `${tot} doğrudan ${hits} tanesini buldun` : '';
       if (ok) P.perfect++;
       plScore(ok, q.w, { xp: ok ? 4 : hits ? 1 : 0, hard: true });
       plRender(); plFx($('.syn-grid'), ok, ok ? 4 : 0);
       return;
     }
-    if (a === 'next' && P.ans) { P.i++; P.ans = false; P.chosen = new Set(); if (P.i >= P.list.length) plFinish(MODES.syn.summary(P, false)); else { P.q = synQ(P.list[P.i]); plRender(); } }
+    if (a === 'next' && P.ans) { P.i++; P.ans = false; P.chosen = new Set(); if (P.i >= P.list.length) plFinish(MODES.syn.summary(P, false)); else { P.q = synQ(P.list[P.i], P.o.kind); plRender(); } }
   },
   key(P, e) { if (P.ans && e.key === 'Enter') { e.preventDefault(); MODES.syn.act(P, 'next'); } else if (!P.ans && e.key === 'Enter' && P.chosen.size) { e.preventDefault(); MODES.syn.act(P, 'sycheck'); } },
-  summary(P, early) { const n = P.i + (P.ans ? 1 : 0); return { title: early ? 'Ara verdin' : 'Synonymes : fini', fr: !early, big: `${P.perfect}/${Math.max(1, n)}`, sub: 'soruda bütün eş anlamlıları buldun', rows: [['Soru', n], ['Tam isabet', P.perfect], ['Eksik/yanlış', n - P.perfect], ['Süre', fmtTime(Date.now() - P.t0)]] }; }
+  summary(P, early) { const n = P.i + (P.ans ? 1 : 0); return { title: early ? 'Ara verdin' : 'Synonymes et antonymes : fini', fr: !early, big: `${P.perfect}/${Math.max(1, n)}`, sub: 'soruda doğruların hepsini buldun', rows: [['Soru', n], ['Tam isabet', P.perfect], ['Eksik/yanlış', n - P.perfect], ['Süre', fmtTime(Date.now() - P.t0)]] }; }
 };
 
 /* ---------- Test ---------- */
@@ -693,7 +702,7 @@ MODES.test = {
   tr: 'Test', fr: 'Contrôle', ic: 'test', grp: 'ib', anim: 'test', ill: '<i></i><i></i><i></i>', min: 4,
   why: 'Geri bildirimsiz sınav provası; sonunda puanın ve cevap anahtarın.',
   fmtBest: b => '%' + b,
-  start(P) { P.o = stOpt('test', { n: 20, types: ['mc', 'tf', 'write', 'gap'], dir: 'mix' }); P.phase = 'setup'; },
+  start(P) { P.o = stOpt('test', { n: 20, types: ['mc', 'tf', 'write', 'gap'], dir: 'mix' }); if (!['mix', 'list', 'def', 'syn', 'ant'].includes(P.o.dir)) P.o.dir = 'mix'; P.phase = 'setup'; },
   progress: P => P.phase === 'run' ? P.qi / P.qs.length : 0,
   hud: P => P.phase === 'run' ? `<span class="hud" id="plHud">${P.qi + 1}/${P.qs.length}</span>` : '',
   view(P) {
@@ -705,15 +714,15 @@ MODES.test = {
         <p class="muted">${maxN} kelimelik setten sorular seçilecek. Cevapların sonda değerlendirilir; test sırasında doğru ya da yanlış gösterilmez.</p>
         <div class="set-row"><div><div class="t">Soru sayısı</div></div><div class="seg">${[10, 20, 30, 0].map(n => `<button data-pl="tn" data-v="${n}" aria-pressed="${o.n === n}" ${n && n > maxN ? 'disabled' : ''}>${n || 'Hepsi (' + maxN + ')'}</button>`).join('')}</div></div>
         <div class="set-row"><div><div class="t">Soru tipleri</div><div class="d">En az birini seç.</div></div><div class="filters" style="margin:0">${tchip('mc', 'Çoktan seçmeli')}${tchip('tf', 'Doğru / yanlış')}${tchip('write', 'Yazılı cevap')}${tchip('gap', 'Boşluk doldurma')}</div></div>
-        <div class="set-row"><div><div class="t">Yön</div><div class="d">Çoktan seçmeli sorular için.</div></div><div class="seg">${[['fr', 'Fransızca sor'], ['tr', 'Türkçe sor'], ['mix', 'Karışık']].map(([k, t]) => `<button data-pl="td" data-v="${k}" aria-pressed="${o.dir === k}">${t}</button>`).join('')}</div></div>
+        <div class="set-row"><div><div class="t">Konu</div><div class="d">Çoktan seçmeli sorular neyi sorsun? Liste: öğretmeninin eşleşmesi.</div></div><div class="seg seg-wrap">${[['mix', 'Karışık'], ['list', 'Liste'], ['def', 'Tanım'], ['syn', 'Eş anlam'], ['ant', 'Zıt anlam']].map(([k, t]) => `<button data-pl="td" data-v="${k}" aria-pressed="${o.dir === k}">${t}</button>`).join('')}</div></div>
         <button class="btn full uc" data-pl="tgo" style="margin-top:14px" ${o.types.length ? '' : 'disabled'}>${IC('test')}Testi başlat</button>
       </div>`;
     }
     const q = P.qs[P.qi], w = q.w;
     let body;
-    if (q.kind === 'mc') body = qPrompt(q) + `<div class="opts">${q.options.map((o, i) => `<button class="opt" data-pl="ta" data-k="${i}" ${q.type !== 'fr2tr' ? 'lang="fr"' : ''}><span class="k">${i + 1}</span>${esc(o.text)}</button>`).join('')}</div>`;
-    else if (q.kind === 'tf') body = `<div class="q-prompt-label">Bu eşleşme doğru mu?</div><div class="tf-pair"><span class="bigword" lang="fr">${esc(w.fr)}</span><span class="tf-eq">=</span><span class="mid">${esc(q.shown)}</span></div><div class="decide"><button class="btn no" data-pl="ta" data-k="f">${IC('x')}Yanlış</button><button class="btn ok" data-pl="ta" data-k="t">${IC('check')}Doğru</button></div>`;
-    else body = `<div class="q-prompt-label">Fransızcasını yaz</div><div class="mid">${esc(w.trMain)}</div><div class="typein"><input id="plIn" class="pl-in" type="text" lang="fr" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Fransızca yaz…" aria-label="Cevabın"><button class="btn" data-pl="ta" data-k="w">Cevapla</button></div>${accentsHTML('plIn')}`;
+    if (q.kind === 'mc') body = qPrompt(q) + `<div class="opts">${q.options.map((o, i) => `<button class="opt" data-pl="ta" data-k="${i}" lang="fr"><span class="k">${i + 1}</span>${esc(o.text)}</button>`).join('')}</div>`;
+    else if (q.kind === 'tf') body = `<div class="q-prompt-label">Bu eşleşme doğru mu? <span class="faint">${TF_SYM[q.sym] || ''}</span></div><div class="tf-pair"><span class="bigword" lang="fr">${esc(frHead(w))}</span><span class="tf-eq">${esc(q.sym)}</span><span class="mid" lang="fr">${esc(q.shown)}</span></div><div class="decide"><button class="btn no" data-pl="ta" data-k="f">${IC('x')}Yanlış</button><button class="btn ok" data-pl="ta" data-k="t">${IC('check')}Doğru</button></div>`;
+    else body = `<div class="q-prompt-label">Kelimeyi yaz</div>${clueHTML(w)}<div class="typein"><input id="plIn" class="pl-in" type="text" lang="fr" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Fransızca yaz…" aria-label="Cevabın"><button class="btn" data-pl="ta" data-k="w">Cevapla</button></div>${accentsHTML('plIn')}`;
     return `<div class="ticket enter" id="tk"><div class="tk-top"><span class="tk-no">Soru ${P.qi + 1} / ${P.qs.length}</span><button class="linkbtn" data-pl="ta" data-k="skip">Boş bırak</button></div>${body}</div>
       <p class="kbd">${q.kind === 'write' ? 'Enter: cevapla' : q.kind === 'tf' ? '← yanlış · → doğru' : '1–4 ile seçebilirsin'}</p>`;
   },
@@ -747,11 +756,11 @@ function testBuild(P) {
     let t = types[i % types.length];
     if (t === 'write' && !typeable(w)) t = 'mc';
     if (t === 'gap' && !clozeable(w)) t = 'mc';
-    if (t === 'mc') { const ty = o.dir === 'fr' ? 'fr2tr' : o.dir === 'tr' ? 'tr2fr' : pick(['fr2tr', 'tr2fr', 'def2fr']); return Object.assign(makeQ(w, 'practice', ty), { kind: 'mc' }); }
+    if (t === 'mc') { const av = (TEST_TYPES[o.dir] || TEST_TYPES.mix).filter(x => qAvail(w, x)); return Object.assign(makeQ(w, 'practice', av.length ? pick(av) : 'list'), { kind: 'mc' }); }
     if (t === 'gap') return Object.assign(makeQ(w, 'practice', 'cloze'), { kind: 'mc' });
     if (t === 'write') return { kind: 'write', type: 'type', w };
-    const d = distractors(w, 1, null, c => c.trMain)[0], truth = Math.random() < .5 || !d;
-    return { kind: 'tf', type: 'tf', w, truth, shown: truth ? w.trMain : d.trMain };
+    const tf = tfPair(w);
+    return { kind: 'tf', type: 'tf', w, truth: tf.truth, shown: tf.shown, sym: tf.sym, right: tf.right };
   });
   shuffle(P.qs); P.qi = 0; P.answers = []; P.phase = 'run'; P.tq0 = Date.now();
 }
@@ -769,13 +778,15 @@ function testAnswer(P, k) {
   if (P.qi >= P.qs.length) { P.phase = 'res'; addXP(2 * PL.ok); plFinish(testSummary(P, false)); }
   else plRender();
 }
+const TEST_TYPES = { list: ['list'], def: ['fr2def', 'def2fr'], syn: ['fr2syn', 'syn2fr'], ant: ['fr2ant', 'ant2fr'], mix: ['list', 'fr2def', 'def2fr', 'fr2syn', 'syn2fr', 'fr2ant', 'ant2fr'] };
+const TF_SYM = { '≈': '≈ eş anlamlı', '≠': '≠ zıt anlamlı', ':': ': tanımı' };
 function testQText(q) {
-  const w = q.w;
-  if (q.type === 'fr2tr') return [`<span lang="fr">${esc(w.fr)}</span>`, esc(w.trMain)];
-  if (q.type === 'tr2fr' || q.type === 'type') return [esc(w.trMain), `<span lang="fr">${esc(w.fr)}</span>`];
-  if (q.type === 'def2fr') return [`<span lang="fr">${w.anti ? '≠ ' : '≈ '}${esc(w.def)}</span>`, `<span lang="fr">${esc(w.fr)}</span>`];
-  if (q.type === 'cloze') return [`<span lang="fr">${esc(w.ex).replace(/\[[^\]]+\]/, '____')}</span>`, `<span lang="fr">${esc(bracketText(w))}</span>`];
-  return [`<span lang="fr">${esc(w.fr)}</span> = ${esc(q.shown)}`, q.truth ? 'Doğru' : 'Yanlış · ' + esc(w.trMain)];
+  const w = q.w, F = t => `<span lang="fr">${esc(t)}</span>`;
+  if (q.kind === 'tf') return [`${F(frHead(w))} ${esc(q.sym)} ${F(q.shown)}`, q.truth ? 'Doğru' : `Yanlış · ${esc(q.sym)} ${F(q.right)}`];
+  if (q.type === 'type') return [F(cut(typeClue(w).t, 90)), F(frHead(w))];
+  if (q.type === 'cloze') return [`<span lang="fr">${esc(w.ex).replace(/\[[^\]]+\]/, '____')}</span>`, F(bracketText(w))];
+  if (q.type === 'def2fr' || q.type === 'syn2fr' || q.type === 'ant2fr') return [`${q.sym ? esc(q.sym) + ' ' : ''}${F(cut(q.shown, 90))}`, F(q.answer)];
+  return [`${F(frHead(w))} <small class="faint">${esc(QTYPES_TR[q.type] || '')}</small>`, F(q.answer)];
 }
 function testSummary(P, early) {
   const n = P.answers.length, ok = P.answers.filter(a => a.ok).length, pct = n ? Math.round(ok / n * 100) : 0;
@@ -793,12 +804,12 @@ MODES.match = {
   tr: 'Eşleştir', fr: 'Associer', ic: 'match', grp: 'oyun', anim: 'match', ill: '<i class="l"></i><i class="r"></i>', min: 3, uniq: true,
   why: 'Altı çift, olabildiğince hızlı. Zaman baskısı tanımayı otomatikleştirir.',
   fmtBest: b => fmtTime(b) + '.' + String(Math.floor(b % 1000 / 100)),
-  start(P) { P.o = stOpt('match', { kind: 'tr' }); matchDeal(P); },
+  start(P) { P.o = stOpt('match', { kind: 'syn' }); if (!['def', 'dfn', 'syn'].includes(P.o.kind)) P.o.kind = 'syn'; matchDeal(P); },
   progress: P => P.gone.size / P.board.length,
   hud: P => `<span class="hud tnum" id="plHud">${IC('clock', 'sm')}<span id="mClock">${matchClock(P)}</span></span>`,
   view(P) {
-    return `<div class="pl-tools"><div class="seg" role="group" aria-label="Eşleştirme türü"><button data-pl="kind" data-v="tr" aria-pressed="${P.o.kind === 'tr'}">Türkçe</button><button data-pl="kind" data-v="def" aria-pressed="${P.o.kind === 'def'}">Tanım (Fransızca)</button></div><span class="faint" style="font-weight:700">Yanlış eşleşme +1 sn</span></div>
-      <div class="mgrid2">${P.board.map((c, i) => `<button class="mtile s-${c.s} ${P.gone.has(i) ? 'gone' : ''}" data-pl="mt" data-k="${i}" ${c.s === 'fr' || P.o.kind === 'def' ? 'lang="fr"' : ''}>${esc(c.t)}</button>`).join('')}</div>`;
+    return `<div class="pl-tools"><div class="seg" role="group" aria-label="Eşleştirme türü"><button data-pl="kind" data-v="syn" aria-pressed="${P.o.kind === 'syn'}">Eş anlamlı</button><button data-pl="kind" data-v="def" aria-pressed="${P.o.kind === 'def'}">Liste</button><button data-pl="kind" data-v="dfn" aria-pressed="${P.o.kind === 'dfn'}">Tanım</button></div><span class="faint" style="font-weight:700">Yanlış eşleşme +1 sn</span></div>
+      <div class="mgrid2">${P.board.map((c, i) => `<button class="mtile s-${c.s} ${P.gone.has(i) ? 'gone' : ''}" data-pl="mt" data-k="${i}" lang="fr">${esc(c.t)}</button>`).join('')}</div>`;
   },
   after(P) { if (!P.tick) { P.tick = setInterval(() => { const c = $('#mClock'); if (c && PL === P && !P.end) c.textContent = matchClock(P); }, 100); P.tm.push(P.tick); } },
   act(P, a, t) {
@@ -823,8 +834,14 @@ MODES.match = {
 };
 function matchDeal(P) {
   const ws = shuffle(P.words.slice()).slice(0, 6);
-  P.board = shuffle(ws.flatMap(w => [{ id: w.id, s: 'fr', t: frShort(w) }, { id: w.id, s: 'x', t: P.o.kind === 'def' ? (w.anti ? '≠ ' : '') + w.def : w.trMain }]));
+  P.board = shuffle(ws.flatMap(w => [{ id: w.id, s: 'fr', t: frShort(w) }, { id: w.id, s: 'x', t: matchText(w, P.o.kind) }]));
   P.pickI = -1; P.gone = new Set(); P.pen = 0; P.tStart = Date.now(); P.end = 0;
+}
+/* eşleştirme kartının karşı yüzü: liste eşi, Fransızca tanım ya da kısa eş (≠ ile zıt) */
+function matchText(w, kind) {
+  if (kind === 'def') return cut(gloss(w), 80);
+  if (kind === 'dfn') { const d = fxOf(w).def; return cut(d || gloss(w), 90); }
+  const sp = shortPartner(w); return (sp.rel === 'ant' ? '≠ ' : '') + sp.t;
 }
 function matchClock(P) { const ms = (P.end || Date.now()) - P.tStart + P.pen; return (ms / 1000).toFixed(1) + ' sn'; }
 function matchEnd(P) {
@@ -840,12 +857,12 @@ function matchEnd(P) {
 /* ---------- Hafıza ---------- */
 MODES.memory = {
   tr: 'Hafıza', fr: 'Mémoire', ic: 'grid', grp: 'oyun', anim: 'mem', ill: '<i></i><i></i><i></i><i></i>', min: 3, uniq: true,
-  why: 'Kartları çevir, eşleri bul. Yeri ve anlamı birlikte hatırlamak dikkati diri tutar.',
+  why: 'Kartları çevir, kelimeyi eş anlamlısıyla buluştur. Yeri ve anlamı birlikte hatırlamak dikkati diri tutar.',
   fmtBest: b => b + ' hamle',
-  start(P) { const ws = shuffle(P.words.slice()).slice(0, 6); P.cards = shuffle(ws.flatMap(w => [{ id: w.id, s: 'fr', t: frShort(w) }, { id: w.id, s: 'tr', t: w.trMain }])); P.up = []; P.gone = new Set(); P.moves = 0; P.lock = false; },
+  start(P) { const ws = shuffle(P.words.slice()).slice(0, 6); P.cards = shuffle(ws.flatMap(w => [{ id: w.id, s: 'fr', t: frShort(w) }, { id: w.id, s: 'tr', t: matchText(w, 'syn') }])); P.up = []; P.gone = new Set(); P.moves = 0; P.lock = false; },
   progress: P => P.gone.size / P.cards.length,
   hud: P => `<span class="hud" id="plHud"><b class="tnum">${P.moves}</b> hamle</span>`,
-  view(P) { return `<div class="mem-grid">${P.cards.map((c, i) => `<button class="mem ${P.gone.has(i) ? 'up done' : P.up.includes(i) ? 'up' : ''}" data-pl="mem" data-k="${i}" aria-label="Kart ${i + 1}"><span class="mem-in"><span class="mem-b" aria-hidden="true">${IC('train')}</span><span class="mem-f s-${c.s}" ${c.s === 'fr' ? 'lang="fr"' : ''}>${esc(c.t)}</span></span></button>`).join('')}</div><p class="kbd">İki kart çevir; Fransızca ile Türkçesi eşleşirse açık kalır.</p>`; },
+  view(P) { return `<div class="mem-grid">${P.cards.map((c, i) => `<button class="mem ${P.gone.has(i) ? 'up done' : P.up.includes(i) ? 'up' : ''}" data-pl="mem" data-k="${i}" aria-label="Kart ${i + 1}"><span class="mem-in"><span class="mem-b" aria-hidden="true">${IC('train')}</span><span class="mem-f s-${c.s}" lang="fr">${esc(c.t)}</span></span></button>`).join('')}</div><p class="kbd">İki kart çevir; kelime ile eş anlamlısı (≠ işaretlilerde zıttı) eşleşirse açık kalır.</p>`; },
   act(P, a, t) { if (a === 'mem') memFlip(P, +t.dataset.k, t); },
   summary(P, early) { return { title: early ? 'Yarıda kaldı' : 'Bravo', rows: [['Hamle', P.moves], ['Bulunan çift', P.gone.size / 2], ['Süre', fmtTime(Date.now() - P.t0)]] }; }
 };
@@ -873,7 +890,7 @@ function memFlip(P, i, el) {
 /* ---------- Şimşek (doğru/yanlış, 60 sn) ---------- */
 MODES.eclair = {
   tr: 'Şimşek', fr: 'Éclair', ic: 'bolt', grp: 'oyun', anim: 'bolt', ill: `<i class="b">${IC('bolt')}</i><i class="t">✓</i><i class="f">✕</i>`, min: 4, uniq: true,
-  why: '60 saniye: eşleşme doğru mu, yanlış mı? Üst üste doğrular puanı katlar.',
+  why: '60 saniye: ≈ eş anlamlı, ≠ zıt anlamlı, : tanım. Eşleşme doğru mu? Üst üste doğrular puanı katlar.',
   fmtBest: b => b + ' puan',
   start(P) { P.score = 0; P.mult = 1; P.T = 60000; P.left = 60000; P.last = []; P.n = 0; P.wq = []; P.cur = eclairPair(P); P.fb = ''; },
   hud: P => `<span class="hud" id="plHud"><b class="tnum">${P.score}</b> puan</span>`,
@@ -882,7 +899,7 @@ MODES.eclair = {
       <div class="ec-stage"><div class="ec-card" id="ecCard">${eclairCard(P.cur)}</div></div>
       <p class="ec-fb" id="ecFb" aria-live="polite">${P.fb}</p>
       <div class="ec-btns"><button class="btn no" data-pl="f">${IC('x')}Yanlış</button><button class="btn ok" data-pl="t">${IC('check')}Doğru</button></div>
-      <p class="kbd">← yanlış · → doğru · kartı kaydırabilirsin</p>`;
+      <p class="kbd">≈ eş anlamlı · ≠ zıt anlamlı · : tanım — ← yanlış · → doğru · kartı kaydırabilirsin</p>`;
   },
   after(P) {
     bindDrag($('#ecCard'), () => eclairAns(P, false), () => eclairAns(P, true));
@@ -904,22 +921,20 @@ MODES.eclair = {
   key(P, e) { if (e.key === 'ArrowRight') eclairAns(P, true); else if (e.key === 'ArrowLeft') eclairAns(P, false); },
   summary(P, early) { return eclairStats(P, early); }
 };
-function eclairCard(c) { return `<span class="ec-w" lang="fr">${esc(frShort(c.w))}</span><span class="ec-eq">=</span><span class="ec-t">${esc(c.shown)}</span>`; }
+function eclairCard(c) { return `<span class="ec-w" lang="fr">${esc(frShort(c.w))}</span><span class="ec-eq" title="${esc(TF_SYM[c.sym] || '')}">${esc(c.sym)}</span><span class="ec-t" lang="fr">${esc(cut(c.shown, 90))}</span>`; }
 function eclairPair(P) {
   const src = P.wq.length && Math.random() < .35 ? P.wq : P.words;
   let w, tries = 0;
   do { w = pick(src); tries++; } while (P.last.includes(w.id) && tries < 10);
   P.last.push(w.id); if (P.last.length > Math.min(5, P.words.length - 1)) P.last.shift();
-  const d = distractors(w, 1, c => normT(c.trMain) !== normT(w.trMain), c => c.trMain)[0];
-  const truth = Math.random() < .5 || !d;
-  return { w, truth, shown: truth ? w.trMain : d.trMain };
+  return tfPair(w);
 }
 function eclairAns(P, said) {
   if (P.done || P.lock || !P.cur) return;
   const c = P.cur, ok = said === c.truth, card = $('#ecCard');
   P.n++;
   if (ok) { plScore(true, c.w, { count: true }); P.mult = Math.min(5, 1 + Math.floor(PL.combo / 4)); P.score += 10 * P.mult; P.fb = ''; }
-  else { plScore(false, c.w, {}); P.mult = 1; if (!P.wq.includes(c.w)) P.wq.push(c.w); P.fb = `${frShort(c.w)} = ${c.w.trMain}`; }
+  else { plScore(false, c.w, {}); P.mult = 1; if (!P.wq.includes(c.w)) P.wq.push(c.w); P.fb = c.truth ? `Doğruydu: ${frShort(c.w)} ${c.sym} ${cut(c.shown, 70)}` : `Doğrusu: ${frShort(c.w)} ${c.sym} ${cut(c.right, 70)}`; }
   haptic(ok ? 'ok' : 'no'); sfx(ok ? 'ok' : 'no');
   if (ok) sparksAt(card, 10); else shake(card);
   const m = $('#ecMult'); if (m) { m.textContent = '×' + P.mult; if (ok && PL.combo % 4 === 0) bump(m); }
@@ -944,12 +959,12 @@ function eclairEnd(P) { if (P.done) return; const b = stBest(P, P.score, false);
 /* ---------- Son metro (arcade) ---------- */
 MODES.metro = {
   tr: 'Son metro', fr: 'Dernier métro', ic: 'train', grp: 'oyun', anim: 'train', ill: '<i class="trk"></i><i class="trn"></i>', min: 3, uniq: true,
-  why: 'Doğru kelimeyi taşıyan treni kaçırma; trenler giderek hızlanır.',
+  why: 'Tabeladaki tanıma ya da eş anlamlıya uyan kelimeyi taşıyan treni kaçırma; trenler giderek hızlanır.',
   fmtBest: b => b + ' puan',
   start(P) { P.lives = 3; P.score = 0; P.level = 1; P.caught = 0; P.queue = shuffle(P.words.slice()); P.wave = null; P.between = false; },
   hud: P => `<span class="hud" id="plHud"><span class="mt-lives" aria-label="${P.lives} hak">${[0, 1, 2].map(i => `<i class="${i < P.lives ? 'on' : ''}">${IC('ticket', 'sm')}</i>`).join('')}</span><b class="tnum">${P.score}</b></span>`,
   view(P) {
-    return `<div class="mt-sign" id="mtSign"><small id="mtSmall">Bu kelimeyi taşıyan treni yakala</small><b id="mtPrompt"></b></div>
+    return `<div class="mt-sign" id="mtSign"><small id="mtSmall">Buna uyan kelimeyi taşıyan treni yakala</small><b id="mtPrompt" lang="fr"></b></div>
       <div class="mt-yard" id="mtYard">${[0, 1, 2].map(i => `<div class="mt-lane" data-lane="${i}"><span class="mt-k" aria-hidden="true">${i + 1}</span><div class="mt-rails"></div></div>`).join('')}</div>
       <p class="kbd" id="mtLv">Trene dokun · klavyede 1, 2, 3 · hız ${P.level}</p>`;
   },
@@ -967,8 +982,8 @@ function metroWave(P) {
   $$('.mt-train', yard).forEach(e => e.remove());
   const W0 = yard.clientWidth, dur = Math.max(4.2, 9.6 * Math.pow(0.92, P.level - 1)) * (REDUCED ? 1.4 : 1);
   P.wave = { w, trains: [] };
-  const pr = $('#mtPrompt'); if (pr) pr.textContent = w.trMain;
-  const sm = $('#mtSmall'); if (sm) { sm.textContent = 'Bu kelimeyi taşıyan treni yakala'; sm.className = ''; }
+  const pr = $('#mtPrompt'); if (pr) { pr.textContent = metroClue(w); pr.setAttribute('lang', 'fr'); }
+  const sm = $('#mtSmall'); if (sm) { sm.textContent = 'Buna uyan kelimeyi taşıyan treni yakala'; sm.className = ''; }
   const lanes = shuffle([0, 1, 2]), lanesEl = $$('.mt-lane', yard);
   opts.forEach((c, k) => {
     const el = document.createElement('button');
@@ -979,6 +994,13 @@ function metroWave(P) {
     el.style.transform = `translateX(${x0}px)`;
     P.wave.trains.push({ k, lane: lanes[k], el, x: x0, wd: tw, v: (W0 + tw) / (dur * 1000), ok: c === w, gone: false, w: c });
   });
+}
+function metroClue(w) {
+  const X = fxOf(w);
+  if (X.def && X.def.length <= 70) return X.def;
+  const s = X.syn.find(o => o.t.length <= 40); if (s) return '≈ ' + s.t;
+  const a = X.ant.find(o => o.t.length <= 40); if (a) return '≠ ' + a.t;
+  return cut(X.def || gloss(w), 70);
 }
 function metroLoop(P) {
   let last = performance.now();
@@ -1040,10 +1062,10 @@ MODES.atelier = {
     return `<div class="ticket at-card" id="tk">
       <div class="tk-top"><span class="tk-no" lang="fr">N° ${w.id} · ${esc(stationName(w.u, w.g))}</span>${n.t ? '<span class="pill master">notlu</span>' : ''}</div>
       <div class="w-head"><div class="bigword" lang="fr">${esc(w.fr)}</div>${spk(w)}</div>
-      <div class="trbig" style="margin-top:6px">${esc(w.trMain)}</div>
-      <div class="exbox" style="margin-top:12px"><div style="flex:1;min-width:0"><div class="fr" lang="fr">${exHTML(w.ex)}</div><div class="tr">${esc(w.et)}</div></div></div>
+      <div style="margin-top:8px">${frxHTML(w, { compact: true })}</div>
+      <div class="exbox" style="margin-top:12px"><div style="flex:1;min-width:0"><div class="fr" lang="fr">${exHTML(w.ex)}</div>${trMode() === 'off' ? '' : `<div class="tr">${esc(w.et)}</div>`}</div></div>
       ${w.tk ? `<div class="tkchip" style="margin-top:12px">${IC('spark', 'sm')}<span>Türkçede: <b>${esc(w.tk)}</b></span><button class="linkbtn" data-pl="usetk">çağrışım yap</button></div>` : ''}
-      <label class="at-f"><span><b>Çağrışım</b> · sesine ya da anlamına benzeyen Türkçe bir şey, küçük bir sahne</span><input id="atK" class="pl-in" type="text" maxlength="160" value="${esc(n.k || '')}" placeholder="${esc(ph)}"></label>
+      <label class="at-f"><span><b>Çağrışım</b> · sesine ya da anlamına benzeyen bir şey, küçük bir sahne (Türkçe ya da Fransızca)</span><input id="atK" class="pl-in" type="text" maxlength="160" value="${esc(n.k || '')}" placeholder="${esc(ph)}"></label>
       <label class="at-f"><span><b>Kendi cümlen</b> · kelimeyi kendi hayatından bir Fransızca cümlede kullan</span><textarea id="atS" rows="2" maxlength="260" lang="fr" placeholder="Ex. : …">${esc(n.s || '')}</textarea></label>
       ${accentsHTML('atS')}
       <p class="at-check" id="atChk" aria-live="polite"></p>
@@ -1080,7 +1102,7 @@ function atCheck(P) {
 /* ---------- Le ou la ? ---------- */
 MODES.genre = {
   tr: 'Le ou la ?', fr: 'Genre', ic: 'genre', grp: 'derin', anim: 'genre', ill: '<i>le</i><i>la</i>', elig: w => !!genderOf(w), min: 3, uniq: true,
-  none: 'Bu sette cinsiyeti belli isim yok; 1. Yazılı ya da bir hat seç.',
+  none: 'Bu sette cinsiyeti belli isim yok; bütün desteyi ya da bir hattı seç.',
   why: 'l’ ile başlayan isimlerde cinsiyet görünmez; sıfat uyumunda puan kaybettirmesin.',
   start(P) { P.list = shuffle(P.words.slice()); P.i = 0; P.ans = false; P.tries = {}; P.first = 0; },
   progress: P => P.i / P.list.length,
@@ -1089,7 +1111,7 @@ MODES.genre = {
     const w = P.list[P.i], n = bareNoun(w), g = genderOf(w), art = g === 'f' ? 'la' : 'le';
     return `<div class="gn-card ${P.ans ? (P.ok1 ? 'good' : 'bad') : 'enter'} ${P.ans ? 'g-' + g : ''}" id="gnCard">
         <span class="gn-art">${P.ans ? art : '?'}</span><div class="gn-w" lang="fr">${esc(n)}</div>
-        ${P.ans ? `<p class="gn-full" lang="fr"><b>${esc(withArticle(w))}</b> · ${esc(withArticle(w, true))}</p><p class="muted">${esc(w.trMain)}</p>` : '<p class="muted">Eril mi, dişil mi?</p>'}
+        ${P.ans ? `<p class="gn-full" lang="fr"><b>${esc(withArticle(w))}</b> · ${esc(withArticle(w, true))}</p><p class="muted" lang="fr">${esc(cut(gloss(w), 90))}</p>` : '<p class="muted">Eril mi, dişil mi?</p>'}
       </div>
       <div class="gn-btns"><button class="gbtn m" data-pl="g" data-v="m" ${P.ans ? 'disabled' : ''}><b lang="fr">le</b><small>un · masculin</small></button><button class="gbtn f" data-pl="g" data-v="f" ${P.ans ? 'disabled' : ''}><b lang="fr">la</b><small>une · féminin</small></button></div>
       ${P.ans && !P.ok1 ? nextBtns(P) : '<p class="kbd">← le · → la</p>'}`;
@@ -1124,7 +1146,7 @@ MODES.speak = {
     const msg = P.st === 'rec' ? 'Dinliyorum… kelimeyi söyle' : P.heard ? `Duyulan: «${esc(P.heard)}»${P.ok1 ? ' · doğru' : ''}` : P.msg ? esc(P.msg) : 'Mikrofona dokun ve kelimeyi söyle';
     return `<div class="ticket ${P.ok1 ? 'sp-ok' : ''}" id="tk">${P.ok1 ? '<i class="punch" aria-hidden="true"></i>' : ''}
       <div class="tk-top"><span class="tk-no">Sesli söyle</span><span class="faint" style="font-weight:700">${P.tries}/3 deneme</span></div>
-      <div class="bigword" lang="fr">${esc(w.fr)}</div><p class="trbig" style="margin-top:6px">${esc(w.trMain)}</p>
+      <div class="bigword" lang="fr">${esc(w.fr)}</div><p class="muted" lang="fr" style="margin-top:6px;font-size:1.05rem">${esc(cut(typeClue(w).t, 110))}</p>
       <div class="sp-row"><button class="btn ghost" data-say="fr" data-id="${w.id}">${IC('speak')}Önce dinle</button><button class="micbtn ${P.st === 'rec' ? 'on' : ''}" data-pl="mic" aria-label="${P.st === 'rec' ? 'Dinlemeyi durdur' : 'Söyle'}">${IC('mic', 'lg')}</button></div>
       <p class="sp-heard ${P.heard && !P.ok1 ? 'no' : P.ok1 ? 'ok' : ''}" id="spHeard">${msg}</p>
     </div>
@@ -1172,7 +1194,7 @@ function miniBar(c) {
 }
 function modeCard(k, compact) {
   const M = MODES[k], sel = stSet();
-  const bestKey = k === 'match' ? 'match-' + ((S.p.mo.match || {}).kind || 'tr') : k;
+  const bestKey = k === 'match' ? 'match-' + ((S.p.mo.match || {}).kind || 'syn') : k;
   const best = S.p.best[bestKey + ':' + stKey(sel)];
   const off = (M.need === 'tts' && !TTS.ok) || (M.need === 'sr' && !SR_API);
   return `<button class="mcard g-${M.grp} ${compact ? 'mini' : ''} ${off ? 'off' : ''}" data-stmode="${k}">
@@ -1193,21 +1215,23 @@ function stSpotlight(root) {
   };
   SPOT = setInterval(tick, 2800); setTimeout(tick, 700);
 }
-function stRoute(c) {
+function stRoute(c, dk) {
   const stops = [['cards', 'Kartlar', 'ayıkla'], ['learn', 'Öğren', 'tanı · seç · yaz'], ['atelier', 'Bağ kur', 'zorlananlara'], ['relevez', 'Relevez', 'bağlamda bul'], ['test', 'Test', 'prova']];
   const rec = !c.total ? '' : c.new === c.total ? 'cards' : c.new > 0 ? 'learn' : (c.hard ? 'atelier' : c.learn > (c.master + c.known) ? 'relevez' : 'test');
   return `<section class="st-route" aria-label="Önerilen çalışma sırası">
     <div class="st-route-h"><h2 lang="fr">Parcours conseillé</h2><p>Yeni bir seti bu sırayla çalış; tekrarlar ise zamanı gelince kendiliğinden gelir.</p></div>
     <ol class="rline">${stops.map(([k, t, s]) => `<li class="${k === rec ? 'rec' : ''}"><button data-stmode="${k}"><i class="rdot" aria-hidden="true"></i><b>${t}</b><small>${k === rec ? 'şimdi bu' : s}</small></button></li>`).join('')}
-      <li class="term"><button data-run="review"><i class="rdot" aria-hidden="true"></i><b>Tekrar</b><small>1 gün sonra</small></button></li></ol>
+      <li class="term"><button data-run="review:${dk}"><i class="rdot" aria-hidden="true"></i><b>Tekrar</b><small>1 gün sonra</small></button></li></ol>
   </section>`;
 }
 function renderStudio() {
-  const sel = stSet(), base = stBase(sel), c = counts(base), u = stUnitOf(sel), due = dueList().length;
-  const srcChips = ST_SRC.map(([k, t]) => {
-    const n = stBase({ src: k, g: 0 }).length, uu = k === 'y1' ? 5 : /^u/.test(k) ? +k[1] : 0;
-    if (!n && sel.src !== k) return '';
-    return `<button class="fchip ${uu ? 'ufc u' + uu : ''}" data-stsrc="${k}" aria-pressed="${sel.src === k}">${t}${uu ? '' : ` <span class="tnum cnt">${n}</span>`}</button>`;
+  const sel = stSet(), dk = sel.deck, base = stBase(sel), c = counts(base), u = stUnitOf(sel), due = dueList(null, dk).length;
+  const decks = DECK_ORDER.map(d => { const n = DECK_WORDS[d].length; return `<button class="st-deck ${DECKS[d].cls}" data-stdeck="${d}" aria-pressed="${dk === d}">${deckMark(d)}<span><b>${esc(DECKS[d].name)}</b><small><span lang="fr">${esc(DECKS[d].fr)}</span> · ${n.toLocaleString('tr-TR')}</small></span></button>`; }).join('');
+  const srcs = [['all', dk === 'y1' ? 'Bütün liste' : 'Bütün deste'], ...(dk === 'y1' ? [] : DECKS[dk].units.map(x => ['u' + x, unitLabel(x)])), ...ST_FILTERS];
+  const srcChips = srcs.map(([k, t]) => {
+    const m = /^u(\d)$/.exec(k), uu = m ? +m[1] : 0, n = stBase({ deck: dk, src: k, g: 0 }).length;
+    if (!n && sel.src !== k && !uu && k !== 'all') return '';
+    return `<button class="fchip ${uu ? 'ufc u' + uu : ''}" data-stsrc="${k}" aria-pressed="${sel.src === k}">${t} <span class="tnum cnt">${n}</span></button>`;
   }).join('');
   const stationSel = u ? `<label class="st-lab">Durak <select id="stG">${[0, ...Array.from({ length: NGROUPS[u] }, (_, i) => i + 1)].map(g => `<option value="${g}" ${sel.g === g ? 'selected' : ''}>${g ? g + ' · ' + esc(trunc(stationName(u, g), 30)) : 'Bütün duraklar'}</option>`).join('')}</select></label>` : '';
   const sizes = [[10, '10'], [20, '20'], [40, '40'], [0, 'Hepsi']].map(([n, t]) => `<button data-stsize="${n}" aria-pressed="${sel.size === n}">${t}</button>`).join('');
@@ -1215,19 +1239,20 @@ function renderStudio() {
   const take = sel.size ? Math.min(base.length, sel.size) : base.length;
   $('#v-studio').innerHTML = `
     <div class="page-h"><h1 class="serif">Stüdyo</h1><span class="faint" style="font-weight:700"><span lang="fr">Atelier de mots</span> · 17 mod</span></div>
-    <p class="muted st-intro">Aynı kelimeleri farklı yollardan çalış. Her mod hafızanın başka bir kapısını çalar; kartın üstünde neden işe yaradığı yazıyor.</p>
-    <details class="card st-set ${u ? 'u' + u : ''}" id="stSetBox" ${ST_OPEN ? 'open' : ''}>
+    <p class="muted st-intro">Aynı kelimeleri farklı yollardan çalış: tanım, eş anlamlı, zıt anlamlı, cümle. Önce desteyi seç; bir oturumdaki bütün kelimeler o desteden gelir.</p>
+    <details class="card st-set ${u ? 'u' + u : DECKS[dk].cls}" id="stSetBox" ${ST_OPEN ? 'open' : ''}>
       <summary aria-label="Çalışma setini değiştir">
         <span class="st-cur"><span class="st-k">Çalışma seti</span><b>${esc(stLabel(sel))}</b><small class="tnum">${take} kelimelik oturum · ${sel.order === 'smart' ? 'akıllı sıra' : sel.order === 'book' ? 'liste sırası' : 'karışık'} · sette ${c.new} yeni, ${c.learn} öğreniliyor, ${c.master + c.known} kalıcı</small>${miniBar(c)}</span>
         <span class="btn sm ghost st-chg">${ST_OPEN ? 'Kapat' : 'Değiştir'}</span>
       </summary>
       <div class="st-body">
+        <div class="st-decks" role="group" aria-label="Deste">${decks}</div>
         <div class="filters" style="margin:0" role="group" aria-label="Kaynak">${srcChips}</div>
         <div class="st-row st-row2">${stationSel}<div class="st-lab">Kelime sayısı <div class="seg" role="group">${sizes}</div></div><div class="st-lab">Sıra <div class="seg" role="group">${orders}</div></div></div>
       </div>
     </details>
-    ${due ? `<button class="st-due" data-run="review">${IC('review')}<span><b>${due} kelime tekrar bekliyor</b><small>Aralıklı tekrar Stüdyo'dan önce gelir: zamanı geçmiş tekrar, unutmanın başladığı yerdir.</small></span>${IC('chev', 'sm')}</button>` : ''}
-    ${stRoute(c)}
+    ${due ? `<button class="st-due" data-run="review:${dk}">${IC('review')}<span><b>${esc(DECKS[dk].name)}: ${due} kelime tekrar bekliyor</b><small>Aralıklı tekrar Stüdyo'dan önce gelir: zamanı geçmiş tekrar, unutmanın başladığı yerdir.</small></span>${IC('chev', 'sm')}</button>` : ''}
+    ${stRoute(c, dk)}
     ${ST_GROUPS.map(g => `<section class="st-grp g-${g.k}"><div class="st-grp-h"><h2>${g.tr} <i lang="fr">${g.fr}</i></h2><p>${g.d}</p></div><div class="mgrid">${g.modes.map(k => modeCard(k)).join('')}</div></section>`).join('')}`;
   const G = $('#stG'); if (G) G.onchange = () => { stSet().g = +G.value; touch(); renderStudio(); };
   const D = $('#stSetBox'); if (D) D.addEventListener('toggle', () => { ST_OPEN = D.open; const c2 = D.querySelector('.st-chg'); if (c2) c2.textContent = D.open ? 'Kapat' : 'Değiştir'; });
@@ -1236,18 +1261,19 @@ function renderStudio() {
 
 /* ---------- olaylar ---------- */
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-pl],[data-stmode],[data-stsrc],[data-stsize],[data-storder],[data-stopen],[data-stgo],[data-stword]');
+  const t = e.target.closest('[data-pl],[data-stmode],[data-stdeck],[data-stsrc],[data-stsize],[data-storder],[data-stopen],[data-stgo],[data-stword]');
   if (!t) return;
   const btn = e.target.closest('button');
   if (btn && btn !== t && t.contains(btn)) return;
   const d = t.dataset;
   if (d.pl) { plAct(d.pl, t, e); return; }
-  if (d.stmode) { if (t.classList.contains('off')) { toast(MODES[d.stmode].need === 'tts' ? 'Bu cihazda sesli okuma yok' : 'Bu tarayıcı konuşma tanımayı desteklemiyor; Android’de Chrome ile çalışır'); return; } stLaunch(d.stmode, d.stset ? { set: { src: d.stset, g: +(d.stg || 0) } } : null); return; }
+  if (d.stmode) { if (t.classList.contains('off')) { toast(MODES[d.stmode].need === 'tts' ? 'Bu cihazda sesli okuma yok' : 'Bu tarayıcı konuşma tanımayı desteklemiyor; Android’de Chrome ile çalışır'); return; } stLaunch(d.stmode, d.stset ? { set: stFrom(d.stset, +(d.stg || 0)) } : null); return; }
+  if (d.stdeck) { const s = stSet(); if (s.deck !== d.stdeck) { s.deck = d.stdeck; s.src = 'all'; s.g = 0; touch(); } renderStudio(); haptic('tap'); return; }
   if (d.stsrc) { const s = stSet(); s.src = d.stsrc; s.g = 0; touch(); renderStudio(); haptic('tap'); return; }
   if (d.stsize !== undefined) { stSet().size = +d.stsize; touch(); renderStudio(); return; }
   if (d.storder) { stSet().order = d.storder; touch(); renderStudio(); return; }
-  if (d.stopen) { const s = stSet(); s.src = d.stopen; s.g = +(d.g || 0); touch(); closeSheet(); show('studio'); return; }
-  if (d.stgo) { const [src, g] = d.st.split(':'); stLaunch(d.stgo, { set: { src, g: +g || 0, order: 'book' }, only: d.stgo === 'learn' ? 'new' : undefined, size: 0 }); return; }
+  if (d.stopen) { Object.assign(stSet(), stFrom(d.stopen, +(d.g || 0))); touch(); closeSheet(); show('studio'); return; }
+  if (d.stgo) { const [src, g] = d.st.split(':'); stLaunch(d.stgo, { set: Object.assign(stFrom(src, +g || 0), { order: 'book' }), only: d.stgo === 'learn' ? 'new' : undefined, size: 0 }); return; }
   if (d.stword) { stLaunch('atelier', { ids: [d.stword], label: 'Tek kelime' }); }
 });
 document.addEventListener('keydown', e => {

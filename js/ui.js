@@ -1,15 +1,19 @@
 'use strict';
 /* =====================================================================
-   MÉTRO DES MOTS — arayüz: yönlendirme, ana sayfa, harita, tekrar, sözlük,
-   keşif/tekrar oturumu, eşleştirme, paneller, ayarlar
+   MÉTRO DES MOTS — arayüz: yönlendirme, ana sayfa, deste sayfaları (Thème 1 · Thème 2),
+   tekrar, sözlük, keşif/tekrar oturumu, eşleştirme, paneller, ayarlar
+   Desteler hiçbir ekranda karışmaz: her oturum, tekrar ve test tek bir desteden gelir.
    ===================================================================== */
 const STATUS_TR = { new: 'Yeni', learn: 'Öğreniliyor', master: 'Ustalaşıldı', known: 'Biliyordum' };
 const LETTERS = 'ABCDEFGHIJKL';
-const TABS = ['home', 'yazili', 'studio', 'plan', 'lex'];
-const PAGES = ['home', 'yazili', 'studio', 'plan', 'review', 'lex', 'exam'];
+const TABS = ['home', 'yazili', 'th1', 'th2', 'studio', 'lex'];
+const PAGES = ['home', 'yazili', 'th1', 'th2', 'studio', 'review', 'lex', 'exam'];
 const VIEWS = [...PAGES, 'sess', 'match', 'sum', 'examrun', 'play'];
-const LINES = [5, 1, 2, 3, 4];
 let VIEW = 'home', PREV = 'home', TAB = 'home';
+function curDeck() { return DECKS[S.p.deck] ? S.p.deck : 'th2'; }
+function deckLine(dk) { const u = S.p.pl && S.p.pl[dk]; return DECKS[dk].units.includes(u) ? u : DECKS[dk].units[0]; }
+/* deste işareti: Thème 1 daire (Métro), Thème 2 köşeli kare (RER), 1. Yazılı Y */
+function deckMark(dk, cls) { return dk === 'y1' ? badge(5, cls) : `<span class="dkm ${DECKS[dk].cls} ${cls || ''}" title="${esc(DECKS[dk].long)}">${dk === 'th1' ? '1' : '2'}</span>`; }
 function trunc(s, n) { return s.length > n ? s.slice(0, Math.max(1, n - 1)) + '…' : s; }
 function relDue(m) {
   const diff = m - nowM();
@@ -29,18 +33,22 @@ function ring(p, size, stroke, color, track) {
     <circle class="ring-v" cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" style="stroke:${color};stroke-dashoffset:${c.toFixed(1)}" stroke-width="${stroke}" stroke-linecap="round"
       stroke-dasharray="${c.toFixed(1)}" data-ring="${off.toFixed(1)}"/></svg>`;
 }
-function badge(u, cls) { return `<span class="roundel ${u === 5 ? 'sq' : ''} ${cls || ''}">${lineBadge(u)}</span>`; }
+function badge(u, cls) { return `<span class="roundel ${u === 5 ? 'sq' : u >= 6 ? 'rer' : ''} u${u} ${cls || ''}">${lineBadge(u)}</span>`; }
 function genderChip(w) { const g = genderOf(w); return g ? `<span class="gchip ${g}" title="${g === 'm' ? 'eril (masculin)' : 'dişil (féminin)'}">${g === 'm' ? 'm · le/un' : 'f · la/une'}</span>` : ''; }
 function nCount(n, key, cls) { return `<b class="${cls || 'tnum'}" data-count="${n}" data-ck="${key}">${n}</b>`; }
 
 /* ---------- yönlendirme ---------- */
 function renderView(v) {
+  if (v === 'th1' || v === 'th2') { renderDeck(v); return; }
   const R = { home: renderHome, yazili: typeof renderYazili === 'function' ? renderYazili : null, studio: typeof renderStudio === 'function' ? renderStudio : null,
-    plan: renderPlan, review: renderReview, lex: renderLex, exam: typeof renderExam === 'function' ? renderExam : null }[v];
+    review: renderReview, lex: renderLex, exam: typeof renderExam === 'function' ? renderExam : null }[v];
   if (R) R();
 }
 function show(v, opts) {
+  if (v === 'plan') v = S.p.deck === 'th2' ? 'th2' : 'th1';
   const from = VIEW;
+  const dk = v === 'yazili' ? 'y1' : v === 'th1' || v === 'th2' ? v : null;
+  if (dk && S.p.deck !== dk) { S.p.deck = dk; saveLocal(); }
   const doit = () => {
     if (PAGES.includes(from) && from !== v) PREV = from;
     VIEW = v;
@@ -65,8 +73,8 @@ function show(v, opts) {
 }
 function rerender() { applyPrefs(); if (PAGES.includes(VIEW)) show(VIEW, { instant: true }); else updateChrome(); }
 function updateChrome() {
-  const n = dueList().length;
-  $$('[data-due]').forEach(b => { b.textContent = n > 99 ? '99+' : n; b.hidden = n === 0; });
+  const per = {}; DECK_ORDER.forEach(d => { per[d] = dueList(null, d).length; });
+  $$('[data-due]').forEach(b => { const n = per[b.dataset.due] || 0; b.textContent = n > 99 ? '99+' : n; b.hidden = n === 0; b.title = n ? n + ' kelime tekrar bekliyor' : ''; });
   const st = $('#topStreak'); if (st) st.textContent = streakNow();
 }
 function moveInd() {
@@ -94,26 +102,29 @@ function departures() {
   const ny = nextStation(5, [5]);
   if (ny) {
     const g = GROUPS['5-' + ny.g], nn = g.filter(w => status(w.id) === 'new').length;
-    rows.push({ cls: 'u5', badge: badge(5), t: stationName(5, ny.g), s: `Ligne Y · durak ${ny.g}/12 · yeni kelimeleri öğren`, n: nn, nl: 'yeni', act: `data-run="y1-learn"` });
+    rows.push({ cls: 'u5', badge: badge(5), t: stationName(5, ny.g), s: `Ligne Y · durak ${ny.g}/12 · yeni kelimeleri öğren`, n: nn, nl: 'yeni', act: `data-run="learn:y1"` });
   } else {
     const cy = counts(DECK_WORDS.y1);
     rows.push({ cls: 'u5', badge: badge(5), t: '1. Yazılı: liste bitti', s: `${cy.learn} kelime tekrar sırasında · sınav provası yap`, n: cy.master + cy.known, nl: 'kalıcı', act: `data-stmode="test" data-stset="y1"` });
   }
-  // aralıklı tekrar
+  // aralıklı tekrar: her deste kendi satırında, asla karışık değil
   if (due.length) {
-    const oldest = due[0], late = nowM() - S.w[oldest.id][1];
-    rows.push({ cls: 'rev', badge: `<span class="roundel rv">${IC('review', 'sm')}</span>`, t: 'Tekrar zamanı', s: late > 60 * DAY ? 'Uzun süredir bekliyor; kısa bir tekrarla başla' : late > DAY ? `En eskisi ${Math.floor(late / DAY)} gün bekliyor; aralık kaçmadan yap` : 'Aralıklı tekrar · kelimeler unutulmadan hemen önce', n: due.length, nl: 'kelime', act: `data-run="review"`, hot: true });
+    DECK_ORDER.forEach(dk => {
+      const dd = dueList(null, dk); if (!dd.length) return;
+      const late = nowM() - S.w[dd[0].id][1];
+      rows.push({ cls: 'rev', badge: `<span class="roundel rv">${IC('review', 'sm')}</span>`, t: 'Tekrar · ' + DECKS[dk].name, s: late > 60 * DAY ? 'Uzun süredir bekliyor; kısa bir tekrarla başla' : late > DAY ? `En eskisi ${Math.floor(late / DAY)} gün bekliyor; aralık kaçmadan yap` : 'Aralıklı tekrar · kelimeler unutulmadan hemen önce', n: dd.length, nl: 'kelime', act: `data-run="review:${dk}"`, hot: true });
+    });
   } else {
     const learning = W.filter(w => status(w.id) === 'learn');
     const nd = learning.length ? Math.min(...learning.map(w => S.w[w.id][1])) : null;
     rows.push({ cls: 'rev', badge: `<span class="roundel rv">${IC('review', 'sm')}</span>`, t: 'Tekrar yok', s: nd ? `Sıradaki tekrar ${relDue(nd)}` : 'Öğrendiğin kelimeler yarından itibaren burada', n: '—', nl: '', act: `data-go="review"` });
   }
-  // Thème 1
-  const nt = nextStation(UNIT_IDS.includes(S.p.plan) ? S.p.plan : 1, UNIT_IDS);
-  if (nt) {
+  // Thème 2 ve Thème 1: sıradaki durak
+  ['th2', 'th1'].forEach(dk => {
+    const nt = nextStation(deckLine(dk), DECKS[dk].units); if (!nt) return;
     const nn = GROUPS[nt.u + '-' + nt.g].filter(w => status(w.id) === 'new').length;
-    rows.push({ cls: 'u' + nt.u, badge: badge(nt.u), t: stationName(nt.u, nt.g), s: `Ligne ${nt.u} · durak ${nt.g} · Thème 1 keşfi${goalLeft ? ` · hedefe ${goalLeft} kelime` : ''}`, n: nn, nl: 'yeni', act: `data-run="th1-discover"` });
-  }
+    rows.push({ cls: 'u' + nt.u, badge: badge(nt.u), t: stationName(nt.u, nt.g), s: `${DECKS[dk].name} · ${lineName(nt.u)} · durak ${nt.g} · keşif${goalLeft ? ` · hedefe ${goalLeft} kelime` : ''}`, n: nn, nl: 'yeni', act: `data-run="discover:${dk}"` });
+  });
   // sınav maratonu
   const E = S.p.exam;
   if (E && E.phase !== 'done' && typeof exScopeLabel === 'function') {
@@ -131,26 +142,24 @@ function boardHTML() {
   </section>`;
 }
 function motdWord() {
-  const pool = DECK_WORDS.y1.filter(w => !['master', 'known'].includes(status(w.id)));
-  const P = pool.length ? pool : DECK_WORDS.y1;
-  return P[hashStr('motd' + ymd()) % P.length];
+  const D = DECK_WORDS[curDeck()], pool = D.filter(w => !['master', 'known'].includes(status(w.id)));
+  const P = pool.length ? pool : D;
+  return P[hashStr('motd' + ymd() + curDeck()) % P.length];
 }
 function motdHTML() {
   const w = motdWord(), st = status(w.id), note = S.n[w.id];
   return `<div class="motd u${w.u}" id="motd" data-motd role="button" tabindex="0" aria-label="Günün kelimesi ${esc(w.fr)}. Anlamını görmek için dokun">
     <div class="motd-in">
       <div class="motd-face motd-f">
-        <span class="motd-k" lang="fr">Le mot du jour</span>
-        <div class="motd-w">${esc(w.fr)}</div>
+        <span class="motd-k" lang="fr">Le mot du jour · ${esc(DECKS[w.deck].name)}</span>
+        <div class="motd-w" lang="fr">${esc(w.fr)}</div>
         <div class="row" style="gap:8px">${genderChip(w)}<span class="pill ${st}">${STATUS_TR[st]}</span></div>
         <span class="motd-hint">${IC('flip', 'sm')}Anlamı için dokun</span>
         <button class="speak sm motd-sp" data-say="fr" data-id="${w.id}" aria-label="Telaffuzu dinle">${IC('speak', 'sm')}</button>
       </div>
       <div class="motd-face motd-b">
-        <div class="trbig">${esc(w.trMain)}</div>
-        <div class="defl"><span class="sym">${w.anti ? '≠' : '≈'}</span><span lang="fr">${esc(w.def)}</span></div>
+        ${frxHTML(w, { compact: true })}
         <div class="motd-ex" lang="fr">${exHTML(w.ex)}</div>
-        ${w.tk ? `<div class="tkchip">${IC('spark', 'sm')}<span>Türkçede: <b>${esc(w.tk)}</b></span></div>` : ''}
         ${note && note.k ? `<div class="tkchip mine">${IC('bulb', 'sm')}<span>${esc(note.k)}</span></div>` : ''}
         <div class="row" style="gap:8px;margin-top:auto">${st === 'new' ? `<button class="btn sm uc" data-wact="learn" data-id="${w.id}">${IC('plus', 'sm')}Listeme ekle</button>` : ''}<button class="btn sm ghost" data-word="${w.id}">Ayrıntı</button></div>
       </div>
@@ -181,6 +190,19 @@ function studioStripHTML() {
     <div class="hm-modes">${typeof modeCard === 'function' ? pick.map(k => modeCard(k, true)).join('') : ''}</div>
   </section>`;
 }
+function deckRow(dk) {
+  const D = DECKS[dk], c = counts(DECK_WORDS[dk]), pct = Math.round((c.master + c.known) / c.total * 100);
+  let viz = '';
+  if (dk === 'y1') {
+    for (let g = 1; g <= NGROUPS[5]; g++) { const gc = groupCounts(5, g), seen = gc.total - gc.new, done = gc.master + gc.known; viz += `<i class="${done === gc.total ? 'p3' : seen >= gc.total / 2 ? 'p2' : seen > 0 ? 'p1' : ''}"></i>`; }
+    viz = `<span class="strip u5">${viz}</span>`;
+  } else viz = `<span class="dl-lines">${D.units.map(u => { const uc = counts(UNIT_WORDS[u]), p = (uc.total - uc.new) / uc.total; return `<span class="dl-line u${u}" title="${esc(lineName(u) + ' · ' + UNITS[u])}">${badge(u, 'xs')}<i><b style="width:${(p * 100).toFixed(1)}%"></b></i></span>`; }).join('')}</span>`;
+  return `<button class="line-row deck-row ${D.cls}" data-go="${D.tab}">${deckMark(dk)}
+      <span style="min-width:0"><span class="ttl">${esc(D.name)} · <i lang="fr">${esc(D.fr)}</i></span>
+        <span class="meta">${c.total.toLocaleString('tr-TR')} kelime · ${DECK_STATIONS[dk]} durak · ${c.learn} öğreniliyor</span>
+        ${viz}</span>
+      <span class="pct tnum">%${pct}</span></button>`;
+}
 function renderHome() {
   const c = counts(), L = lvl(S.p.xp), due = dueList();
   const started = Object.keys(S.w).length > 0;
@@ -189,24 +211,12 @@ function renderHome() {
     <section class="card welcome" style="margin:0">
       <div class="card-h"><h2>İlk yolculuk</h2></div>
       <div class="tiles">
-        <div class="tile"><b>Öğren</b><span>1. Yazılı listesini duraklar hâlinde çalış: önce anlamı tanı, sonra seç, en son kendin yaz.</span></div>
-        <div class="tile"><b>Tekrar et</b><span>Öğrendiğin her kelime 1 gün, 3 gün, 1 hafta, 2 hafta ve 1 ay sonra farklı bir soruyla geri gelir.</span></div>
-        <div class="tile"><b>Ustalaş</b><span>Beş tekrarı da doğru bilen kelime ustalaşılmış sayılır. Stüdyo'daki 17 mod aynı kelimeleri farklı yönlerden çalıştırır.</span></div>
+        <div class="tile"><b>Bir deste seç</b><span>1. Yazılı, Thème 1 ve Thème 2 ayrı sekmelerde. Her destenin tekrarı, testi ve Stüdyo seti ayrıdır; kelimeler hiç karışmaz.</span></div>
+        <div class="tile"><b>Fransızca–Fransızca öğren</b><span>Her kelimenin tanımı, eş anlamlıları ve zıt anlamlıları birlikte gelir. Kalın yazılanlar öğretmeninin listesinden; Türkçe yalnızca destek.</span></div>
+        <div class="tile"><b>Tekrar et, ustalaş</b><span>Öğrendiğin her kelime 1 gün, 3 gün, 1 hafta, 2 hafta ve 1 ay sonra farklı bir soruyla geri gelir: tanım, eş anlam, zıt anlam, cümle, yazma.</span></div>
       </div>
     </section>`;
-  const lines = LINES.map(u => {
-    const uc = counts(UNIT_WORDS[u]), pct = Math.round((uc.master + uc.known) / uc.total * 100);
-    let strip = '';
-    for (let g = 1; g <= NGROUPS[u]; g++) {
-      const gc = groupCounts(u, g), seen = gc.total - gc.new, done = gc.master + gc.known;
-      strip += `<i class="${done === gc.total ? 'p3' : seen >= gc.total / 2 ? 'p2' : seen > 0 ? 'p1' : ''}"></i>`;
-    }
-    return `<button class="line-row u${u}" ${u === 5 ? 'data-go="yazili"' : `data-plan="${u}"`}>${badge(u)}
-      <span style="min-width:0"><span class="ttl">${u === 5 ? '1. Yazılı · ' : ''}${esc(UNITS[u])}</span>
-        <span class="meta">${uc.total} kelime · ${NGROUPS[u]} durak · ${uc.learn} öğreniliyor</span>
-        <span class="strip">${strip}</span></span>
-      <span class="pct tnum">%${pct}</span></button>`;
-  }).join('');
+  const decks = DECK_ORDER.map(deckRow).join('');
   const t0 = new Date(); t0.setHours(0, 0, 0, 0);
   const fc = [0, 0, 0, 0, 0, 0, 0];
   learning.forEach(w => { const d = new Date(S.w[w.id][1] * MINUTE); d.setHours(0, 0, 0, 0); const k = Math.max(0, Math.round((d - t0) / 86400000)); if (k < 7) fc[k]++; });
@@ -236,8 +246,8 @@ function renderHome() {
     <section class="s5 motd-wrap">${motdHTML()}</section>
     ${studioStripHTML()}
     <section class="card s7">
-      <div class="card-h"><h2>Hatlar</h2><span class="faint" style="font-weight:700">5 hat · ${W.length.toLocaleString('tr-TR')} kelime</span></div>
-      <div class="lines">${lines}</div>
+      <div class="card-h"><h2>Desteler</h2><span class="faint" style="font-weight:700">3 deste · ${W.length.toLocaleString('tr-TR')} kelime</span></div>
+      <div class="lines">${decks}</div>
     </section>
     <section class="card s5">
       <div class="card-h"><h2>Semtin</h2><span class="faint" style="font-weight:700">20<sup>e</sup>’den 1<sup>er</sup>’e</span></div>
@@ -252,8 +262,8 @@ function renderHome() {
     </section>
     <section class="card s12">
       <div class="card-h"><h2>Kelime durumu</h2><span class="faint" style="font-weight:700">${c.learn + c.master + c.known} / ${c.total} kelime yolda</span></div>
-      <div class="deckbars">${deckBar('1. Yazılı', DECK_WORDS.y1, 'u5')}${deckBar('Thème 1 · kitap', DECK_WORDS.th1, 'u1')}</div>
-      ${c.hard ? `<div class="row" style="margin-top:14px"><span class="pill hard">${c.hard} zorlu kelime</span><span class="muted" style="font-size:.92rem">En az iki kez yanlış yaptığın kelimeler</span><span class="spacer"></span><button class="btn sm no" data-run="practice-hard">Zorluları çalış</button></div>` : ''}
+      <div class="deckbars">${DECK_ORDER.map(dk => deckBar(DECKS[dk].long, DECK_WORDS[dk], DECKS[dk].cls)).join('')}</div>
+      ${c.hard ? `<div class="row" style="margin-top:14px"><span class="pill hard">${c.hard} zorlu kelime</span><span class="muted" style="font-size:.92rem">En az iki kez yanlış yaptığın kelimeler</span><span class="spacer"></span>${DECK_ORDER.map(dk => { const h = DECK_WORDS[dk].filter(w => isHard(w.id)).length; return h ? `<button class="btn sm no" data-run="hard:${dk}">${esc(DECKS[dk].name)} (${h})</button>` : ''; }).join('')}</div>` : ''}
     </section>
     <section class="card s6">
       <div class="card-h"><h2>Önümüzdeki 7 gün</h2><span class="faint" style="font-weight:700">tekrar takvimi</span></div>
@@ -288,18 +298,57 @@ function routeHTML(L) {
     <p class="xpnote">Doğru tekrar +10 · ustalaşma +25 · yeni kelime +5 · günlük hedef +30 · Stüdyo'da doğru cevap +2–4 · oyun rekoru bonus</p></div>`;
 }
 
-/* ---------- HAT HARİTASI ---------- */
-function renderPlan() {
-  const u = LINES.includes(S.p.plan) ? S.p.plan : 1, uc = counts(UNIT_WORDS[u]);
-  const pick = LINES.map(x => `<button class="u${x}" data-plan="${x}" aria-pressed="${x === u}">${badge(x)}${esc(trunc(x === 5 ? '1. Yazılı' : UNITS[x], 26))}</button>`).join('');
-  const due = UNIT_WORDS[u].filter(w => isDue(w.id)).length;
-  $('#v-plan').innerHTML = `
-    <div class="linepick" role="group" aria-label="Hat seç">${pick}</div>
-    <div class="card u${u}">
+/* ---------- DESTE SAYFASI (Thème 1 · Thème 2): kendi tekrarı, keşfi, sınavı, Stüdyo'su ve hat haritası ---------- */
+function renderDeck(dk) {
+  const D = DECKS[dk], ws = DECK_WORDS[dk], c = counts(ws), due = dueList(null, dk).length;
+  const seen = c.total - c.new, kalici = c.master + c.known;
+  const u = deckLine(dk), uc = counts(UNIT_WORDS[u]), udue = UNIT_WORDS[u].filter(w => isDue(w.id)).length;
+  const ns = nextStation(u, D.units), nsW = ns ? GROUPS[ns.u + '-' + ns.g].filter(w => status(w.id) === 'new').length : 0;
+  const E = S.p.exam, exOn = E && E.phase !== 'done' && typeof exScopeDeck === 'function' && exScopeDeck(E.scope) === dk;
+  const learnN = ws.filter(w => ['learn', 'master'].includes(status(w.id))).length;
+  const lineRows = D.units.map(x => {
+    const xc = counts(UNIT_WORDS[x]), p = (xc.total - xc.new) / xc.total, k = (xc.master + xc.known) / xc.total;
+    return `<button class="dline u${x}" data-plan="${x}" aria-pressed="${x === u}">${badge(x)}
+      <span class="dl-m"><b lang="fr">${esc(UNITS[x])}</b><small>${lineName(x)} · ${xc.total} kelime · ${NGROUPS[x]} durak</small>
+        <span class="ys-bar" aria-hidden="true"><i class="b-m" style="width:${(k * 100).toFixed(1)}%"></i><i class="b-l" style="width:${((p - k) * 100).toFixed(1)}%"></i></span></span>
+      <span class="ys-n tnum">%${Math.round(p * 100)}</span></button>`;
+  }).join('');
+  $('#v-' + dk).innerHTML = `
+  <section class="yz-hero dk-hero ${D.cls}">
+    <div class="yz-hero-in">
+      <div class="yz-id">${deckMark(dk, 'xl')}
+        <div style="min-width:0"><p class="yz-k" lang="fr">${D.net} · ${dk === 'th1' ? 'lignes 1 à 4' : 'lignes A à D'}</p><h1>${D.name}</h1><p class="yz-s"><span lang="fr">${D.fr}</span> · ${c.total.toLocaleString('tr-TR')} kelime · ${DECK_STATIONS[dk]} durak</p></div></div>
+      <div class="yz-ring">
+        <div class="ring" style="width:132px;height:132px">${ring(seen / c.total, 132, 12, '#FFFFFF', 'rgba(255,255,255,.22)')}<div class="rc"><span><b class="tnum" data-count="${seen}" data-ck="dk${dk}">${seen}</b><small>/ ${c.total.toLocaleString('tr-TR')} görüldü</small></span></div></div>
+      </div>
+    </div>
+    <div class="yz-pills"><span class="ypill"><i class="dot new"></i>${c.new} yeni</span><span class="ypill"><i class="dot learn"></i>${c.learn} öğreniliyor</span><span class="ypill"><i class="dot master"></i>${c.master} ustalaşıldı</span><span class="ypill"><i class="dot known"></i>${c.known} biliyordum</span>${c.hard ? `<span class="ypill hard">${c.hard} zorlu</span>` : ''}</div>
+    <p class="yz-theme">Bu sekmedeki her şey yalnızca ${D.name} kelimeleriyle çalışır: tekrar, keşif, test, maraton ve Stüdyo.</p>
+  </section>
+  <div class="grid" style="margin-top:16px">
+    <section class="card s7 yz-act ${D.cls}">
+      <div class="card-h"><h2>Şimdi ne yapayım?</h2><span class="faint" style="font-weight:700">%${Math.round(kalici / c.total * 100)} kalıcı</span></div>
+      <div class="yz-acts">
+        ${ns ? `<button class="yact main" data-run="learn:${dk}">${IC('learn')}<span><b>${seen ? 'Öğrenmeye devam' : 'Öğrenmeye başla'}</b><small>${lineName(ns.u)} · durak ${ns.g} · ${esc(stationName(ns.u, ns.g))} · ${nsW} yeni kelime · tanı, seç, yaz</small></span>${IC('arrow')}</button>`
+              : `<button class="yact main" data-stmode="test" data-stset="${dk}">${IC('test')}<span><b>Deste bitti: sınav provası</b><small>${c.total} kelimeden karışık, notlu test</small></span></button>`}
+        <button class="yact" data-run="review:${dk}" ${due ? '' : 'disabled'}>${IC('review')}<span><b>Tekrar${due ? ` (${due})` : ''}</b><small>${due ? 'vadesi gelenler, yalnız bu deste' : 'şu an yok'}</small></span></button>
+        <button class="yact" data-run="discover:${dk}" ${c.new ? '' : 'disabled'}>${IC('plus')}<span><b>Hızlı keşif</b><small>kartı gör: biliyorsan geç, bilmiyorsan listene al</small></span></button>
+        <button class="yact" data-exdeck="${dk}">${IC('target')}<span><b>${exOn ? 'Maratona devam' : 'Sınav maratonu'}</b><small>${exOn ? `${E.pos}/${E.ids.length} · kaldığın yerden` : 'desteyi ya da bir hattı durmadan öğren'}</small></span></button>
+        <button class="yact" data-stmode="test" data-stset="${dk}">${IC('test')}<span><b>Test</b><small>tanım, eş ve zıt anlamlı karışık</small></span></button>
+        <button class="yact" data-run="hard:${dk}" ${c.hard ? '' : 'disabled'}>${IC('bolt')}<span><b>Zorlu (${c.hard})</b><small>en az iki kez yanlış yaptıkların</small></span></button>
+        <button class="yact" data-run="free:${dk}" ${learnN ? '' : 'disabled'}>${IC('spark')}<span><b>Serbest pratik</b><small>öğrendiklerinden karışık; takvim değişmez</small></span></button>
+        <button class="yact" data-stopen="${dk}">${IC('studio')}<span><b>Stüdyo</b><small>17 mod, bu desteyle</small></span></button>
+      </div>
+    </section>
+    <section class="card s5 dk-lines">
+      <div class="card-h"><h2>Hatlar</h2><span class="faint" style="font-weight:700">bir hat seç</span></div>
+      <div class="dlines">${lineRows}</div>
+    </section>
+    <section class="card s12 u${u} linecard" id="lineCard-${dk}">
       <div class="plan-head">${badge(u, 'lg')}
         <div style="min-width:0;flex:1">
-          <div class="them" lang="fr">${u === 5 ? 'Ligne Y · 1er examen · 11e année' : `Thème 1 · Identités · Unité ${u}`}</div>
-          <h1>${esc(UNITS[u])}</h1>
+          <div class="them" lang="fr">${esc(D.long)} · ${lineName(u)}</div>
+          <h1 lang="fr">${esc(UNITS[u])}</h1>
           <p class="muted" style="margin-top:4px">${esc(UNIT_TR[u])}</p>
         </div>
       </div>
@@ -309,23 +358,25 @@ function renderPlan() {
         <span class="pill master">${uc.master} ustalaşıldı</span><span class="pill known">${uc.known} biliyordum</span>
       </div>
       <div class="row" style="margin-top:14px">
-        <button class="btn uc" data-run="discover-line" ${uc.new ? '' : 'disabled'}>${IC('plus')}Bu hatta keşfet</button>
-        <button class="btn ghost" data-run="review-line" ${due ? '' : 'disabled'}>${IC('review')}Vadesi gelenler (${due})</button>
+        <button class="btn uc" data-run="dline:${u}" ${uc.new ? '' : 'disabled'}>${IC('plus')}Bu hatta keşfet</button>
+        <button class="btn ghost" data-run="rline:${u}" ${udue ? '' : 'disabled'}>${IC('review')}Vadesi gelenler (${udue})</button>
         <button class="btn ghost" data-exam="${u}">${IC('target')}Hat testi</button>
-        <button class="btn ghost" data-stopen="${u === 5 ? 'y1' : 'u' + u}">${IC('studio')}Stüdyo</button>
+        <button class="btn ghost" data-stopen="u${u}">${IC('studio')}Stüdyo</button>
       </div>
-      <div class="mapbox" id="mapbox"></div>
+      <div class="mapbox" id="mapbox-${dk}"></div>
       <div class="legend">
         <span><svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="8" style="fill:var(--card);stroke:var(--line-2)" stroke-width="3"/></svg>Yeni durak</span>
         <span><svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="8" style="fill:var(--card);stroke:var(--uc)" stroke-width="3"/></svg>Dış halka: görülen kelime oranı</span>
         <span><svg width="22" height="22" aria-hidden="true"><circle cx="11" cy="11" r="8" style="fill:var(--uc)"/></svg>Duraktaki bütün kelimeler tamam</span>
       </div>
-    </div>`;
+    </section>
+  </div>`;
+  countUps($('#v-' + dk));
   drawMap();
 }
 function drawMap() {
-  const box = $('#mapbox'); if (!box) return;
-  const u = LINES.includes(S.p.plan) ? S.p.plan : 1, n = NGROUPS[u];
+  const dk = VIEW === 'th2' ? 'th2' : 'th1', box = $('#mapbox-' + dk); if (!box) return;
+  const u = deckLine(dk), n = NGROUPS[u];
   const width = Math.max(300, box.clientWidth || 340);
   const per = width < 420 ? 4 : width < 560 ? 5 : width < 760 ? 7 : width < 940 ? 8 : 10;
   const padX = 52, rowH = 100, top = 34;
@@ -358,9 +409,9 @@ function drawMap() {
     <path class="map-line" pathLength="1" d="${d}" fill="none" style="stroke:var(--uc)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>${st}</svg>`;
 }
 
-/* ---------- TEKRAR MERKEZİ ---------- */
+/* ---------- TEKRAR MERKEZİ: her deste ayrı tekrar edilir ---------- */
 function renderReview() {
-  const due = dueList(), c = counts();
+  const due = dueList();
   const sc = [0, 0, 0, 0, 0, 0];
   for (const k in S.w) { const s = S.w[k][0]; if (s >= 0 && s <= 5) sc[s]++; }
   const learning = W.filter(w => status(w.id) === 'learn');
@@ -368,40 +419,48 @@ function renderReview() {
   const sizes = [0, 10, 20, 50].map(n => `<button data-size="${n}" aria-pressed="${S.p.sessSize === n}">${n || 'Kesintisiz'}</button>`).join('');
   const rungs = STAGE_TR.map((t, i) => `<div class="rung"><b class="tnum">${sc[i]}</b><span>${i + 1}. tekrar</span><span>${t} sonra</span></div>`).join('')
     + `<div class="rung m"><b class="tnum">${sc[5]}</b><span>Ustalaşıldı</span><span>uzun süreli</span></div>`;
-  const ex = LINES.map(u => `<button class="btn sm ghost u${u}" data-exam="${u}">${badge(u, 'xs')}${u === 5 ? 'Yazılı' : 'Hat ' + u}</button>`).join('');
-  const dy = due.filter(w => w.u === 5).length;
+  const decks = DECK_ORDER.map(dk => {
+    const D = DECKS[dk], n = dueList(null, dk).length, h = DECK_WORDS[dk].filter(w => isHard(w.id)).length, lr = DECK_WORDS[dk].filter(w => ['learn', 'master'].includes(status(w.id))).length;
+    return `<div class="rv-deck ${D.cls}">${deckMark(dk)}
+      <div class="rv-m"><b>${esc(D.name)} <i lang="fr">${esc(D.fr)}</i></b><small>${n ? n + ' kelime tekrar bekliyor' : lr ? 'şu an vadesi gelen yok' : 'henüz öğrenilen kelime yok'}</small></div>
+      <div class="rv-b"><button class="btn sm" data-run="review:${dk}" ${n ? '' : 'disabled'}>${IC('review', 'sm')}Tekrar (${n})</button>
+        <button class="btn sm ghost" data-run="hard:${dk}" ${h ? '' : 'disabled'}>${IC('bolt', 'sm')}Zorlu (${h})</button>
+        <button class="btn sm ghost" data-run="free:${dk}" ${lr ? '' : 'disabled'}>${IC('spark', 'sm')}Pratik</button></div></div>`;
+  }).join('');
+  const ex = DECK_ORDER.map(dk => `<div class="rv-ex"><span class="faint" style="font-weight:800">${esc(DECKS[dk].name)}</span><div class="row" style="gap:6px">${DECKS[dk].units.map(u => `<button class="btn sm ghost u${u}" data-exam="${u}">${badge(u, 'xs')}${u === 5 ? 'Yazılı' : unitLabel(u)}</button>`).join('')}</div></div>`).join('');
   $('#v-review').innerHTML = `
   <div class="grid">
     <div class="card s7">
       <span class="faint" style="font-weight:800">Tekrar zamanı gelen</span>
-      <div class="row" style="align-items:flex-end;margin:6px 0 4px"><span class="sum-big tnum">${due.length}</span><span class="muted" style="padding-bottom:8px;font-weight:700">kelime${dy ? ` · ${dy} tanesi 1. Yazılı'dan` : ''}</span></div>
-      <p class="muted">${due.length ? 'Her kelime, bulunduğu basamağa uygun bir soru tipiyle gelir: ilk tekrarlarda anlam, sonra ters yön ve tanım, en son bağlam ve yazma.' : learning.length ? `Şu an vadesi gelen kelime yok. Sıradaki tekrar ${relDue(nextDue)}.` : 'Listende henüz kelime yok. Önce yeni kelimeler öğren.'}</p>
-      <div class="row" style="margin:16px 0"><span class="faint" style="font-weight:800">Oturum uzunluğu</span><div class="seg" role="group" aria-label="Oturum uzunluğu">${sizes}</div></div>
-      <div class="row"><button class="btn" data-run="review" ${due.length ? '' : 'disabled'}>${IC('review')}Tekrara başla</button>${dy && dy < due.length ? `<button class="btn ghost u5" data-run="review-y1">${badge(5, 'xs')}Yalnız 1. Yazılı (${dy})</button>` : ''}</div>
+      <div class="row" style="align-items:flex-end;margin:6px 0 4px"><span class="sum-big tnum">${due.length}</span><span class="muted" style="padding-bottom:8px;font-weight:700">kelime, üç destede toplam</span></div>
+      <p class="muted">${due.length ? 'Desteler ayrı ayrı tekrar edilir; bir oturumda yalnız tek destenin kelimeleri gelir. Her kelime basamağına uygun bir soruyla döner: önce listedeki eşi ve tanımı, sonra eş ve zıt anlamlıları, en son cümlede ve yazarak.' : learning.length ? `Şu an vadesi gelen kelime yok. Sıradaki tekrar ${relDue(nextDue)}.` : 'Listende henüz kelime yok. Önce bir destede yeni kelimeler öğren.'}</p>
+      <div class="rv-decks">${decks}</div>
+      <div class="row" style="margin-top:14px"><span class="faint" style="font-weight:800">Oturum uzunluğu</span><div class="seg" role="group" aria-label="Oturum uzunluğu">${sizes}</div></div>
     </div>
     <div class="card s5">
       <div class="card-h"><h2>Basamaklar</h2><span class="faint" style="font-weight:700">aralıklı tekrar</span></div>
       <div class="ladder">${rungs}</div>
       <p class="faint" style="font-size:.86rem;margin-top:12px">Doğru cevap kelimeyi bir sonraki basamağa taşır. Yanlış cevap onu başa döndürür ve kelime aynı oturumun sonunda bir kez daha sorulur.</p>
     </div>
-    <div class="s12"><div class="tiles">
-      <button class="tile" data-run="practice-hard" ${c.hard ? '' : 'disabled'}>${IC('bolt')}<b>Zorlu kelimeler (${c.hard})</b><span>En az iki kez yanlış yaptığın kelimelerle hızlı çalışma. Takvimi değiştirmez.</span></button>
-      <button class="tile" data-run="practice-learning" ${c.learn + c.master ? '' : 'disabled'}>${IC('spark')}<b>Serbest pratik</b><span>Öğrendiğin kelimelerden rastgele sorular. Takvimi değiştirmez, XP kazandırır.</span></button>
-      <div class="tile">${IC('target')}<b>Hat testi</b><span>Bir hattın tamamından rastgele 25 soru; yeni kelimeler de dâhil.</span><div class="row" style="gap:6px;margin-top:4px">${ex}</div></div>
-    </div></div>
+    <div class="card s12">
+      <div class="card-h"><h2>Hat testi</h2><span class="faint" style="font-weight:700">bir hattın tamamından 25 soru · takvim değişmez</span></div>
+      <div class="rv-exs">${ex}</div>
+    </div>
   </div>`;
 }
 
 /* ---------- SÖZLÜK ---------- */
-const LEX = { q: '', u: 0, s: 'all', lim: 120 };
+const LEX = { q: '', d: '', u: 0, s: 'all', lim: 120 };
 function renderLex() {
-  const uchips = [0, 5, 1, 2, 3, 4].map(u => `<button class="fchip ${u ? 'ufc u' + u : ''}" data-lexu="${u}" aria-pressed="${LEX.u === u}">${u === 5 ? '1. Yazılı' : u ? 'Hat ' + u : 'Hepsi'}</button>`).join('');
+  const dchips = [['', 'Bütün desteler'], ...DECK_ORDER.map(dk => [dk, DECKS[dk].name])].map(([dk, t]) => `<button class="fchip ${dk ? 'dfc ' + DECKS[dk].cls : ''}" data-lexd="${dk}" aria-pressed="${LEX.d === dk}">${dk ? deckMark(dk, 'xs') : ''}${esc(t)}</button>`).join('');
+  const uchips = LEX.d && LEX.d !== 'y1' ? [0, ...DECKS[LEX.d].units].map(u => `<button class="fchip ${u ? 'ufc u' + u : ''}" data-lexu="${u}" aria-pressed="${LEX.u === u}">${u ? unitLabel(u) : 'Bütün hatlar'}</button>`).join('') : '';
   const schips = [['all', 'Her durum'], ['new', 'Yeni'], ['learn', 'Öğreniliyor'], ['master', 'Ustalaşıldı'], ['known', 'Biliyordum'], ['hard', 'Zorlu'], ['fav', 'Yıldızlı'], ['note', 'Notlu'], ['fix', 'Düzeltilen']]
     .map(([k, t]) => `<button class="fchip" data-lexs="${k}" aria-pressed="${LEX.s === k}">${t}</button>`).join('');
   $('#v-lex').innerHTML = `
     <div class="page-h"><h1 class="serif">Sözlük</h1><span class="faint" style="font-weight:700"><span lang="fr">Lexique</span> · ${W.length.toLocaleString('tr-TR')} kelime</span></div>
-    <div class="search">${IC('search')}<input id="lexq" type="search" placeholder="Fransızca, Türkçe ya da tanım ara…" value="${esc(LEX.q)}" autocomplete="off" spellcheck="false" aria-label="Sözlükte ara"></div>
-    <div class="filters" role="group" aria-label="Hat">${uchips}</div>
+    <div class="search">${IC('search')}<input id="lexq" type="search" placeholder="Kelime, tanım, eş ya da zıt anlamlı ara…" value="${esc(LEX.q)}" autocomplete="off" spellcheck="false" aria-label="Sözlükte ara"></div>
+    <div class="filters" role="group" aria-label="Deste">${dchips}</div>
+    ${uchips ? `<div class="filters" role="group" aria-label="Hat" style="margin-top:-4px">${uchips}</div>` : ''}
     <div class="filters" role="group" aria-label="Durum" style="margin-top:-4px">${schips}</div>
     <p class="faint" id="lexcount" style="font-weight:700;margin-bottom:10px"></p>
     <div class="lex-list" id="lexlist"></div>`;
@@ -410,31 +469,31 @@ function renderLex() {
 }
 function lexItems() {
   const q = normT(LEX.q);
-  return W.filter(w => (!LEX.u || w.u === LEX.u) &&
+  return W.filter(w => (!LEX.d || w.deck === LEX.d) && (!LEX.u || w.u === LEX.u) &&
     (LEX.s === 'all' || (LEX.s === 'hard' ? isHard(w.id) : LEX.s === 'fav' ? !!S.f[w.id] : LEX.s === 'fix' ? !!w.fx : LEX.s === 'note' ? !!S.n[w.id] : status(w.id) === LEX.s)) &&
     (!q || w.key.includes(q)));
 }
 function renderLexList() {
   const items = lexItems(), box = $('#lexlist'); if (!box) return;
-  $('#lexcount').textContent = items.length.toLocaleString('tr-TR') + ' kelime';
-  if (!items.length) { box.innerHTML = '<div class="empty">Bu filtreye uyan kelime yok. Aramayı kısaltmayı ya da başka bir hattı seçmeyi dene.</div>'; return; }
+  $('#lexcount').textContent = items.length.toLocaleString('tr-TR') + ' kelime' + (LEX.d ? ' · ' + DECKS[LEX.d].name : ' · üç deste');
+  if (!items.length) { box.innerHTML = '<div class="empty">Bu filtreye uyan kelime yok. Aramayı kısaltmayı ya da başka bir desteyi seçmeyi dene.</div>'; return; }
   box.innerHTML = items.slice(0, LEX.lim).map(w => {
     const st = status(w.id);
     return `<button class="lex-row u${w.u}" data-word="${w.id}"><i class="dot ${st}" title="${STATUS_TR[st]}"></i>
-      <span class="fr">${S.f[w.id] ? '★ ' : ''}${esc(w.fr)}</span><span class="tr">${esc(w.trMain)}</span><span class="where">${lineBadge(w.u)} · D${w.g}</span></button>`;
+      <span class="fr" lang="fr">${S.f[w.id] ? '★ ' : ''}${esc(w.fr)}</span><span class="tr" lang="fr">${esc(gloss(w))}${trMode() === 'always' ? ` <i class="trmini" lang="tr">${esc(w.trMain)}</i>` : ''}</span><span class="where" title="${esc(DECKS[w.deck].long + ' · ' + lineName(w.u) + ' · durak ' + w.g)}">${badge(w.u, 'xs')}<span>D${w.g}</span></span></button>`;
   }).join('') + (items.length > LEX.lim ? `<div class="more"><button class="btn ghost sm" data-lexmore>${items.length - LEX.lim} kelime daha göster</button></div>` : '');
 }
 
 /* ---------- OTURUM MOTORU (keşif · tekrar · pratik) ---------- */
 let SES = null;
 function newSession(kind, words, title, units) {
-  SES = { kind, title, units: units || null, items: words.map(w => ({ w, retry: false })), idx: 0, phase: 'front', q: null, answered: false,
+  SES = { kind, title, deck: words[0].deck, units: units || null, items: words.map(w => ({ w, retry: false })), idx: 0, phase: 'front', q: null, answered: false,
           correct: 0, total: 0, wrong: [], learned: [], known: [], advanced: 0, mastered: 0, xp0: S.p.xp, xpShown: 0, lvl0: lvl(S.p.xp).i, typedState: null, prev: null, combo: 0 };
   show('sess'); renderSess();
 }
 function startDiscover(words, title, units) {
   if (!words.length) { toast('Burada keşfedilecek yeni kelime kalmadı'); return; }
-  newSession('discover', words, title || 'Keşif', units || (words[0].u === 5 ? [5] : UNIT_IDS));
+  newSession('discover', words, title || 'Keşif · ' + DECKS[words[0].deck].name, units || DECKS[words[0].deck].units);
 }
 function startReview(words, title) {
   if (!words.length) { toast('Vadesi gelen kelime yok'); return; }
@@ -448,7 +507,8 @@ function startPractice(words, title, max, endless) {
 }
 function discoverNext(count, units) {
   units = units || UNIT_IDS;
-  const ns = nextStation(units.includes(S.p.plan) ? S.p.plan : units[0], units);
+  const dk = deckOf(units[0]), pref = dk === 'y1' ? 5 : deckLine(dk);
+  const ns = nextStation(units.includes(pref) ? pref : units[0], units);
   if (!ns) { toast('Bu hatlardaki bütün kelimeleri keşfettin. Bravo!'); return; }
   const out = [];
   for (const u of [ns.u, ...units.filter(x => x !== ns.u)]) {
@@ -458,7 +518,7 @@ function discoverNext(count, units) {
     }
     if (out.length >= count) break;
   }
-  startDiscover(out, 'Keşif · ' + lineName(ns.u), units);
+  startDiscover(out, 'Keşif · ' + DECKS[deckOf(ns.u)].name, units);
 }
 function curItem() { return SES.items[SES.idx]; }
 function flowing() { return SES.kind === 'discover' || (SES.kind === 'review' && !S.p.sessSize) || (SES.kind === 'practice' && !!SES.pool); }
@@ -466,19 +526,49 @@ function stageDots(id) {
   const st = stageOf(id); const k = st === 9 ? 5 : Math.max(0, Math.min(5, st));
   return `<span class="stage" title="Basamak ${k}/5">${[0, 1, 2, 3, 4].map(i => `<i class="${i < k ? 'on' : ''}"></i>`).join('')}</span>`;
 }
+/* Fransızca–Fransızca kart: tanım · eş anlamlılar · zıt anlamlılar (kalın = öğretmeninin listesi) + Türkçe destek */
+function xList(arr) { return arr.map(o => o.L ? `<b title="Öğretmeninin listesinden">${esc(o.t)}</b>` : `<span>${esc(o.t)}</span>`).join('<i class="xsep" aria-hidden="true">·</i>'); }
+function frxHTML(w, opt) {
+  opt = opt || {};
+  const X = fxOf(w), rows = [], m = trMode();
+  if (X.def) rows.push(`<div class="xr d"><span class="xk" title="définition · tanım">déf.</span><span class="xv" lang="fr">${X.defL ? `<b title="Öğretmeninin listesinden">${esc(X.def)}</b>` : esc(X.def)}</span></div>`);
+  if (X.syn.length) rows.push(`<div class="xr s"><span class="xk" title="synonymes · eş anlamlılar">syn.</span><span class="xv" lang="fr">${xList(X.syn)}</span></div>`);
+  if (X.ant.length) rows.push(`<div class="xr a"><span class="xk" title="antonymes · zıt anlamlılar">ant.</span><span class="xv" lang="fr">${xList(X.ant)}</span></div>`);
+  if (!opt.noTr) rows.push(m === 'off' ? `<details class="xr t trpeek"><summary><span class="xk">tr.</span><span class="xv">Türkçesini göster</span></summary><span class="xv">${esc(w.tr)}</span></details>`
+    : `<div class="xr t"><span class="xk" title="Türkçe destek">tr.</span><span class="xv">${esc(w.tr)}</span></div>`);
+  return `<div class="xbox ${opt.compact ? 'compact' : ''}">${rows.join('')}</div>`;
+}
 function wordInfo(w, opt) {
-  const def = w.anti
-    ? `<div class="defl"><span class="sym">≠</span><span>Zıttı: <b lang="fr">${esc(w.def)}</b>${w.trAnti ? ' · ' + esc(w.trAnti) : ''}</span></div>`
-    : `<div class="defl"><span class="sym">≈</span><span lang="fr">${esc(w.def)}</span></div>`;
-  const note = S.n[w.id];
-  return `<div class="stack" style="margin-top:${opt && opt.tight ? 8 : 16}px">
-    <div class="trbig">${esc(w.trMain)}</div>${def}
-    <div class="exbox"><div style="min-width:0;flex:1"><div class="fr" lang="fr">${exHTML(w.ex)}</div><div class="tr">${esc(w.et)}</div></div>
+  const note = S.n[w.id], m = trMode();
+  return `<div class="stack winfo" style="margin-top:${opt && opt.tight ? 8 : 16}px">
+    ${frxHTML(w)}
+    <div class="exbox"><div style="min-width:0;flex:1"><div class="fr" lang="fr">${exHTML(w.ex)}</div>${m === 'off' ? '' : `<div class="tr">${esc(w.et)}</div>`}</div>
       <button class="speak sm" data-say="ex" data-id="${w.id}" aria-label="Örnek cümleyi dinle">${IC('speak', 'sm')}</button></div>
-    ${w.tk ? `<div class="tkchip">${IC('spark', 'sm')}<span>Türkçede: <b>${esc(w.tk)}</b></span></div>` : ''}
+    ${w.tk && m !== 'off' ? `<div class="tkchip">${IC('spark', 'sm')}<span>Türkçede: <b>${esc(w.tk)}</b></span></div>` : ''}
     ${note && (note.k || note.s) ? `<div class="tkchip mine">${IC('bulb', 'sm')}<span>${note.k ? esc(note.k) : ''}${note.k && note.s ? ' · ' : ''}${note.s ? '<i lang="fr">' + esc(note.s) + '</i>' : ''}</span></div>` : ''}
     ${w.fx ? `<div class="fixnote">${IC('pen', 'sm')}<span><b>Listeden düzeltildi.</b> ${esc(w.fx)}</span></div>` : ''}
   </div>`;
+}
+/* soru başlığı: bütün oturumlarda (tekrar, Stüdyo, sınav) ortak */
+function qPromptHTML(q, o) {
+  o = o || {};
+  const w = q.w, X = fxOf(w), m = trMode();
+  const big = `<div class="w-head"><div class="bigword" lang="fr">${esc(w.fr)}</div><button class="speak" data-say="fr" data-id="${w.id}" aria-label="Telaffuzu dinle">${IC('speak')}</button></div>`;
+  const lab = t => `<div class="q-prompt-label">${t}</div>`;
+  const clue = (sym, t) => `<div class="mid qclue" lang="fr">${sym ? `<span class="qsym">${sym}</span>` : ''}<span>${esc(t)}</span></div>`;
+  let h;
+  if (q.type === 'list') h = lab(w.anti ? 'Listede zıttı olarak hangisi var?' : 'Listede karşısında hangisi var?') + big;
+  else if (q.type === 'fr2def') h = lab('Tanımı hangisi?') + big;
+  else if (q.type === 'fr2syn') h = lab('Eş anlamlısı hangisi?') + big;
+  else if (q.type === 'fr2ant') h = lab('Zıt anlamlısı hangisi?') + big;
+  else if (q.type === 'def2fr') h = lab('Bu tanıma uyan kelime') + clue('', q.shown);
+  else if (q.type === 'syn2fr') h = lab('Hangi kelimenin eş anlamlısı?') + clue('≈', q.shown);
+  else if (q.type === 'ant2fr') h = lab('Hangi kelimenin zıt anlamlısı?') + clue('≠', q.shown);
+  else if (q.type === 'cloze') h = lab('Cümleyi tamamla') + `<div class="cloze" lang="fr">${esc(w.ex).replace(/\[[^\]]+\]/, '<span class="gap">&nbsp;</span>')}</div>`
+    + (o.hint ? `<button class="linkbtn" data-hint style="margin-top:6px">İpucu: tanımı göster</button><p class="muted" id="hint" lang="fr" hidden>${X.def ? esc(X.def) : esc(gloss(w))}</p>` : '');
+  else { const c = q.clue || typeClue(w); h = lab('Kelimeyi yaz') + clue(c.sym, c.t) + `<p class="faint qfirst">İpucu: «${esc(cleanTerm(w.fr).charAt(0))}…» ile başlıyor</p>`; }
+  if (m === 'always') h += `<p class="trhint">${esc(q.type === 'cloze' ? w.et : w.tr)}</p>`;
+  return h;
 }
 function sessHeader(w) {
   const total = SES.items.length, done0 = SES.idx + (SES.answered || SES.phase === 'learned' ? 1 : 0);
@@ -490,7 +580,7 @@ function sessHeader(w) {
       <span class="count tnum">${flowing() ? (SES.idx + 1) + ' · akış' : Math.min(SES.idx + 1, total) + ' / ' + total}</span></div>
     <div class="sess-mode"><span class="pill ${SES.kind === 'review' ? 'learn' : SES.kind === 'discover' ? 'known' : ''}">${kindTR}</span>
       ${badge(w.u, 'xs')}
-      <span class="faint" style="font-weight:700;min-width:0">${lineName(w.u)} · Durak ${w.g} · ${esc(stationName(w.u, w.g))}</span>
+      <span class="faint sm-where">${esc(DECKS[w.deck].name)} · ${lineName(w.u)} · Durak ${w.g} · ${esc(stationName(w.u, w.g))}</span>
       ${curItem().retry ? '<span class="pill hard">Pekiştirme</span>' : ''}
       <span class="spacer"></span>${SES.combo >= 3 ? `<span class="combo">${IC('flame', 'sm')}×${SES.combo}</span>` : ''}<span class="pl-xp tnum" id="sessXP">+${SES.xpShown} XP</span></div>`;
 }
@@ -504,7 +594,7 @@ function renderSess() {
   }
   bindSess();
   if (S.p.auto && SES.kind === 'discover' && SES.phase === 'front') setTimeout(() => speak(speechText(w.fr)), 250);
-  if (S.p.auto && SES.q && SES.q.type === 'fr2tr' && !SES.answered && SES.kind !== 'discover') setTimeout(() => speak(speechText(w.fr)), 250);
+  if (S.p.auto && SES.q && WORD_PROMPT.has(SES.q.type) && !SES.answered && SES.kind !== 'discover') setTimeout(() => speak(speechText(w.fr)), 250);
 }
 function sessXPFly(src) {
   const gained = S.p.xp - SES.xp0, set = () => { if (!SES) return; SES.xpShown = gained; const x = $('#sessXP'); if (x) x.textContent = '+' + gained + ' XP'; };
@@ -519,7 +609,7 @@ function discoverCard(w) {
     <div class="ticket enter" id="tk"><span class="swipe-tag l">ÖĞRENMELİYİM</span><span class="swipe-tag r">BİLİYORUM</span>${top}
       <div class="exbox" style="margin-top:18px"><div style="min-width:0;flex:1"><div class="fr" lang="fr">${exHTML(w.ex)}</div></div>
         <button class="speak sm" data-say="ex" data-id="${w.id}" aria-label="Örnek cümleyi dinle">${IC('speak', 'sm')}</button></div>
-      <p class="q-prompt-label" style="margin-top:20px">Bu kelimenin anlamını biliyor musun?</p></div>
+      <p class="q-prompt-label" style="margin-top:20px">Tanımını, eş ve zıt anlamlılarını biliyor musun?</p></div>
     <div class="decide"><button class="btn ghost" data-dec="learn">${IC('plus')}Öğrenmeliyim</button><button class="btn ok" data-dec="know">${IC('check')}Biliyorum</button></div>
     <p class="swipe-hint">Kartı sola ya da sağa kaydırabilirsin · klavyede ← →</p>`;
   if (ph === 'check') return `
@@ -541,14 +631,7 @@ function decide(kind) {
 }
 function questionCard(q) {
   const w = q.w, review = SES.kind === 'review' && !curItem().retry;
-  let prompt = '';
-  if (q.type === 'fr2tr') prompt = `<div class="w-head"><div class="bigword" lang="fr">${esc(w.fr)}</div><button class="speak" data-say="fr" data-id="${w.id}" aria-label="Telaffuzu dinle">${IC('speak')}</button></div>`;
-  else if (q.type === 'tr2fr') prompt = `<div class="q-prompt-label">Türkçesi</div><div class="mid">${esc(w.trMain)}</div>`;
-  else if (q.type === 'def2fr') prompt = `<div class="q-prompt-label">${w.anti ? 'Hangisinin zıt anlamlısı?' : 'Fransızca tanım'}</div><div class="mid" lang="fr">${w.anti ? '≠ ' : '≈ '}${esc(w.def)}</div>`;
-  else if (q.type === 'cloze') prompt = `<div class="q-prompt-label">Cümleyi tamamla</div><div class="cloze" lang="fr">${esc(w.ex).replace(/\[[^\]]+\]/, '<span class="gap">&nbsp;</span>')}</div>
-      <button class="linkbtn" data-hint style="margin-top:6px">Türkçesini göster</button><p class="muted" id="hint" hidden>${esc(w.et)}</p>`;
-  else prompt = `<div class="q-prompt-label">Fransızcasını yaz</div><div class="mid">${esc(w.trMain)}</div>
-      <p class="faint" style="margin-top:6px;font-weight:700">İpucu: “${esc(cleanTerm(w.fr).charAt(0))}…” ile başlıyor · ${w.anti ? 'zıttı ' + esc(w.def) : esc(trunc(w.def, 70))}</p>`;
+  const prompt = qPromptHTML(q, { hint: true });
   let body = '';
   if (q.type === 'type') {
     const ts = SES.typedState;
@@ -558,7 +641,7 @@ function questionCard(q) {
     body = `<div class="opts">${q.options.map((o, i) => {
       let cls = '';
       if (SES.answered) cls = o.ok ? 'ok' : (o.picked ? 'no' : 'dim');
-      return `<button class="opt ${cls}" data-opt="${i}" ${SES.answered ? 'disabled' : ''}><span class="k">${i + 1}</span>${esc(o.text)}</button>`;
+      return `<button class="opt ${cls}" data-opt="${i}" ${SES.answered ? 'disabled' : ''} lang="fr"><span class="k">${i + 1}</span>${esc(o.text)}</button>`;
     }).join('')}</div>`;
   }
   return `<div class="ticket ${SES.answered ? '' : 'enter'}" id="tk">${SES.answered && SES.lastOk ? '<i class="punch" aria-hidden="true"></i>' : ''}
@@ -646,14 +729,14 @@ function refill() {
   const s = SES, inSes = new Set(s.items.map(x => x.w.id));
   let add = [];
   if (s.kind === 'discover') {
-    const last = s.items[s.items.length - 1].w, units = s.units || UNIT_IDS;
+    const last = s.items[s.items.length - 1].w, units = s.units || DECKS[s.deck].units;
     for (const u of [last.u, ...units.filter(x => x !== last.u)]) {
       for (let g = (u === last.u ? last.g : 1); g <= NGROUPS[u] && add.length < 10; g++)
         for (const w of GROUPS[u + '-' + g]) if (add.length < 10 && status(w.id) === 'new' && !inSes.has(w.id)) add.push(w);
       if (add.length >= 10) break;
     }
   } else if (s.kind === 'review' && !S.p.sessSize) {
-    add = dueList().filter(w => !inSes.has(w.id)).slice(0, 20);
+    add = dueList(null, s.deck).filter(w => !inSes.has(w.id)).slice(0, 20);
   } else if (s.kind === 'practice' && s.pool) {
     add = shuffle(s.pool.filter(w => s.pool.length <= 20 || !s.items.slice(-20).some(x => x.w === w))).slice(0, 20);
   }
@@ -666,7 +749,7 @@ function endSession() {
   const s = SES; if (!s) return;
   flush();
   const xp = S.p.xp - s.xp0;
-  renderSum({ kind: s.kind, title: s.title, xp, correct: s.correct, total: s.total, wrong: [...new Set(s.wrong)], learned: s.learned, known: s.known, advanced: s.advanced, mastered: s.mastered });
+  renderSum({ kind: s.kind, deck: s.deck, title: s.title, xp, correct: s.correct, total: s.total, wrong: [...new Set(s.wrong)], learned: s.learned, known: s.known, advanced: s.advanced, mastered: s.mastered });
   SES = null;
 }
 
@@ -678,7 +761,7 @@ function renderSum(r) {
     head = `<h1>Durak tamam</h1><p class="muted">${r.learned.length} kelime öğrenme listene eklendi, ${r.known.length} kelimeyi zaten biliyordun.</p>`;
     stats = [['Öğrenilecek', r.learned.length], ['Biliyordum', r.known.length], ['Bugün', today()[1] + ' / ' + S.p.goal], ['XP', '+' + r.xp]];
     if (r.learned.length) list = `<div class="card" style="margin-top:12px"><div class="card-h"><h2>Listene eklenenler</h2><span class="faint" style="font-weight:700">ilk tekrar yarın</span></div><div class="wlist">${r.learned.map(wl).join('')}</div></div>`;
-    btns = (r.learned.length >= 2 ? `<button class="btn" data-sumrun="consolidate">${IC('bolt')}Hemen pekiştir (${r.learned.length} soru)</button>` : '') + `<button class="btn uc" data-run="${r.learned.concat(r.known)[0] && r.learned.concat(r.known)[0].u === 5 ? 'y1-discover' : 'th1-discover'}">${IC('plus')}Devam et</button>`;
+    btns = (r.learned.length >= 2 ? `<button class="btn" data-sumrun="consolidate">${IC('bolt')}Hemen pekiştir (${r.learned.length} soru)</button>` : '') + `<button class="btn uc" data-run="discover:${r.deck}">${IC('plus')}${esc(DECKS[r.deck].name)}: devam et</button>`;
     SUM_WORDS = r.learned;
   } else {
     const pct = r.total ? Math.round(r.correct / r.total * 100) : 0;
@@ -687,7 +770,8 @@ function renderSum(r) {
       ? [['Basamak atlayan', r.advanced], ['Ustalaşılan', r.mastered], ['Yanlış', r.wrong.length], ['XP', '+' + r.xp]]
       : [['Doğru', r.correct], ['Yanlış', r.wrong.length], ['Seri', streakNow() + ' gün'], ['XP', '+' + r.xp]];
     if (r.wrong.length) list = `<div class="card" style="margin-top:12px"><div class="card-h"><h2>Gözden geçir</h2><span class="faint" style="font-weight:700">${r.wrong.length} kelime</span></div><div class="wlist">${r.wrong.map(wl).join('')}</div></div>`;
-    btns = (r.wrong.length ? `<button class="btn no" data-sumrun="wrong">${IC('bolt')}Yanlışları çalış</button>` : '') + (dueList().length ? `<button class="btn" data-run="review">${IC('review')}Tekrara devam (${dueList().length})</button>` : '');
+    const dn = dueList(null, r.deck).length;
+    btns = (r.wrong.length ? `<button class="btn no" data-sumrun="wrong">${IC('bolt')}Yanlışları çalış</button>` : '') + (dn ? `<button class="btn" data-run="review:${r.deck}">${IC('review')}${esc(DECKS[r.deck].name)}: tekrara devam (${dn})</button>` : '');
     SUM_WORDS = r.wrong;
   }
   v.innerHTML = `<div class="card sum-card"><div class="sum-head">${head}</div>
@@ -697,14 +781,14 @@ function renderSum(r) {
   if (r.kind !== 'discover' && r.total >= 5 && r.correct === r.total) confetti(140);
 }
 let SUM_WORDS = [];
-function wl(w) { return `<button class="wl u${w.u}" data-word="${w.id}"><span class="fr" lang="fr">${esc(w.fr)}</span><span class="tr">${esc(w.trMain)}</span><i class="dot ${status(w.id)}"></i></button>`; }
+function wl(w) { return `<button class="wl u${w.u}" data-word="${w.id}"><span class="fr" lang="fr">${esc(w.fr)}</span><span class="tr" lang="fr">${esc(gloss(w))}${trMode() === 'always' ? ` <i class="trmini" lang="tr">${esc(w.trMain)}</i>` : ''}</span><i class="dot ${status(w.id)}"></i></button>`; }
 
 /* ---------- EŞLEŞTİRME (kitaptaki gibi, duraktan) ---------- */
 let MT = null, MT_TIMER = 0;
 function startMatch(u, g, mode) {
   const words = GROUPS[u + '-' + g].slice();
-  mode = mode || S.p.matchMode || 'def';
-  const target = w => mode === 'tr' ? w.trMain : (w.anti ? '≠ ' : '') + w.def;
+  mode = mode === 'dfn' || mode === 'def' ? mode : S.p.matchMode === 'dfn' ? 'dfn' : 'def';
+  const target = w => { if (mode === 'dfn') { const d = fxOf(w).def; if (d) return d; } return gloss(w); };
   MT = { u, g, mode, words, right: shuffle(words.map(w => ({ id: w.id, text: target(w) }))), target, sel: null, done: new Set(), doneR: new Set(), miss: 0, t0: Date.now(), end: 0 };
   show('match'); renderMatch();
   stopMatchTimer(); MT_TIMER = setInterval(() => { const el = $('#mtime'); if (el && MT && !MT.end) el.textContent = fmtTime(Date.now() - MT.t0); }, 500);
@@ -715,22 +799,22 @@ function renderMatch() {
   const m = MT, v = $('#v-match'); v.className = 'view u' + m.u;
   const best = S.p.match[m.u + '-' + m.g + '-' + m.mode], N = m.words.length;
   const left = m.words.map(w => `<button class="mitem ${m.done.has(w.id) ? 'done' : ''} ${m.sel === w.id ? 'sel' : ''}" data-ml="${w.id}" ${m.done.has(w.id) ? 'disabled' : ''} lang="fr"><span class="mk">${w.n}</span>${esc(w.fr)}</button>`).join('');
-  const right = m.right.map((r, i) => `<button class="mitem ${m.doneR.has(i) ? 'done' : ''}" data-mr="${i}" ${m.doneR.has(i) ? 'disabled' : ''} ${m.mode === 'tr' ? '' : 'lang="fr"'}><span class="mk">${LETTERS[i]}</span>${esc(r.text)}</button>`).join('');
+  const right = m.right.map((r, i) => `<button class="mitem ${m.doneR.has(i) ? 'done' : ''}" data-mr="${i}" ${m.doneR.has(i) ? 'disabled' : ''} lang="fr"><span class="mk">${LETTERS[i]}</span>${esc(r.text)}</button>`).join('');
   const fin = m.end ? `<div class="card" style="margin-top:16px;text-align:center">
       <h2 class="serif" style="font-size:1.8rem" lang="fr">${m.miss === 0 ? 'Sans faute !' : 'Terminé !'}</h2>
       <p class="muted" style="margin:6px 0 14px">${fmtTime(m.end - m.t0)} · ${m.miss} hata${best ? ' · en iyi süren ' + fmtTime(best * 1000) : ''}</p>
       <div class="sess-actions" style="justify-content:center"><button class="btn uc" data-mrestart>${IC('match')}Yeniden oyna</button>
-        <button class="btn ghost" data-mmode="${m.mode === 'tr' ? 'def' : 'tr'}">${m.mode === 'tr' ? 'Tanımlarla oyna' : 'Türkçeyle oyna'}</button>
+        <button class="btn ghost" data-mmode="${m.mode === 'dfn' ? 'def' : 'dfn'}">${m.mode === 'dfn' ? 'Listeyle oyna' : 'Tanımlarla oyna'}</button>
         <button class="btn ghost" data-station="${m.u}-${m.g}">Durağa dön</button></div></div>` : '';
   v.innerHTML = `<div class="match-top">
-      <button class="iconbtn" data-go="${PREV || 'plan'}" aria-label="Geri dön">${IC('x')}</button>
+      <button class="iconbtn" data-go="${PREV || DECKS[deckOf(m.u)].tab}" aria-label="Geri dön">${IC('x')}</button>
       ${badge(m.u)}
-      <div style="min-width:0"><h2>Eşleştir</h2><span class="faint" style="font-weight:700">Durak ${m.g} · ${esc(stationName(m.u, m.g))}</span></div>
+      <div style="min-width:0"><h2>Eşleştir</h2><span class="faint" style="font-weight:700">${esc(DECKS[deckOf(m.u)].name)} · Durak ${m.g} · ${esc(stationName(m.u, m.g))}</span></div>
       <span class="spacer"></span>
-      <div class="seg" role="group" aria-label="Eşleştirme türü"><button data-mmode="def" aria-pressed="${m.mode === 'def'}">Tanım (liste)</button><button data-mmode="tr" aria-pressed="${m.mode === 'tr'}">Türkçe</button></div>
+      <div class="seg" role="group" aria-label="Eşleştirme türü"><button data-mmode="def" aria-pressed="${m.mode === 'def'}">Liste</button><button data-mmode="dfn" aria-pressed="${m.mode === 'dfn'}">Tanım</button></div>
       <span class="mstat tnum">${IC('clock', 'sm')}<span id="mtime">${fmtTime((m.end || Date.now()) - m.t0)}</span></span><span class="mstat tnum" id="mscore">${m.done.size}/${N} · ${m.miss} hata</span>
     </div>
-    <p class="faint" style="margin-bottom:12px;font-weight:700">Soldan bir kelime seç, sonra sağdan ${m.mode === 'tr' ? 'Türkçe karşılığını' : 'tanımını (≠ olanlarda zıt anlamlısını)'} seç.</p>
+    <p class="faint" style="margin-bottom:12px;font-weight:700">Soldan bir kelime seç, sonra sağdan ${m.mode === 'dfn' ? 'Fransızca tanımını' : 'listedeki karşılığını (≠ olanlarda zıt anlamlısını)'} seç.</p>
     <div class="match"><div class="mcol">${left}</div><div class="mcol">${right}</div></div>${fin}`;
 }
 function matchLeft(id) { if (!MT || MT.end || MT.done.has(id)) return; MT.sel = MT.sel === id ? null : id; renderMatch(); }
@@ -785,28 +869,29 @@ function openWord(id) {
   acts.push(`<button class="btn ghost sm" data-stword="${id}">${IC('bulb', 'sm')}${S.n[id] ? 'Notunu düzenle' : 'Bağ kur: not yaz'}</button>`);
   if (st !== 'new') acts.push(`<button class="btn ghost sm" data-wact="reset" data-id="${id}">İlerlemeyi sıfırla</button>`);
   acts.push(`<button class="btn ghost sm" data-station="${w.u}-${w.g}">${IC('map', 'sm')}Durağa git</button>`);
-  openSheet(`<div class="u${w.u}">${sheetHead(`${lineName(w.u)} · Durak ${w.g} · N° ${w.id}`, `<span lang="fr">${esc(w.fr)}</span>`, w.u)}
+  openSheet(`<div class="u${w.u}">${sheetHead(`${esc(DECKS[w.deck].name)} · ${lineName(w.u)} · Durak ${w.g} · N° ${w.id}`, `<span lang="fr">${esc(w.fr)}</span>`, w.u)}
     <div class="row"><button class="speak" data-say="fr" data-id="${id}" aria-label="Telaffuzu dinle">${IC('speak')}</button>
       <span class="pill ${st}">${STATUS_TR[st]}</span>${isHard(id) ? '<span class="pill hard">Zorlu</span>' : ''}${genderChip(w)}
       <span class="faint" style="font-size:.9rem;font-weight:700">${state}</span><span class="spacer"></span>
       <button class="iconbtn" data-fav="${id}" aria-pressed="${!!S.f[id]}" aria-label="Yıldızla" style="${S.f[id] ? 'color:var(--or);border-color:var(--or)' : ''}">${IC('star')}</button></div>
     ${wordInfo(w)}
+    <p class="listline"><span class="faint">Öğretmeninin listesinde</span> <b lang="fr">${esc(noSup(w.fr))}</b> <span class="lsym">${w.anti ? '≠' : '='}</span> <span lang="fr">${esc(w.def)}</span></p>
     ${r && st !== 'known' ? `<p class="faint" style="margin-top:12px;font-size:.88rem;font-weight:700">${r[2]} doğru · ${r[3]} yanlış</p>` : ''}
     <div class="row" style="margin-top:16px">${acts.join('')}</div></div>`);
 }
 function openStation(u, g) {
   const words = GROUPS[u + '-' + g], gc = counts(words), N = words.length;
   const due = words.filter(w => isDue(w.id));
-  const bestD = S.p.match[u + '-' + g + '-def'], bestT = S.p.match[u + '-' + g + '-tr'];
+  const bestD = S.p.match[u + '-' + g + '-def'], bestT = S.p.match[u + '-' + g + '-dfn'];
   const src = u === 5 ? 'y1' : 'u' + u;
-  openSheet(`<div class="u${u}">${sheetHead(`${lineName(u)} · ${esc(UNITS[u])}`, `Durak ${g} · ${esc(stationName(u, g))}`, u)}
+  openSheet(`<div class="u${u}">${sheetHead(`${esc(DECKS[deckOf(u)].name)} · ${lineName(u)} · <span lang="fr">${esc(UNITS[u])}</span>`, `Durak ${g} · <span lang="fr">${esc(stationName(u, g))}</span>`, u)}
     <div class="row" style="margin-bottom:14px"><span class="pill new">${gc.new} yeni</span><span class="pill learn">${gc.learn} öğreniliyor</span><span class="pill master">${gc.master} ustalaşıldı</span><span class="pill known">${gc.known} biliyordum</span>
-      ${bestD || bestT ? `<span class="faint" style="font-size:.86rem;font-weight:700">En iyi eşleştirme: ${bestD ? fmtTime(bestD * 1000) + ' (tanım)' : ''}${bestD && bestT ? ' · ' : ''}${bestT ? fmtTime(bestT * 1000) + ' (Türkçe)' : ''}</span>` : ''}</div>
+      ${bestD || bestT ? `<span class="faint" style="font-size:.86rem;font-weight:700">En iyi eşleştirme: ${bestD ? fmtTime(bestD * 1000) + ' (liste)' : ''}${bestD && bestT ? ' · ' : ''}${bestT ? fmtTime(bestT * 1000) + ' (tanım)' : ''}</span>` : ''}</div>
     <div class="tiles t2">
-      <button class="tile" data-stgo="learn" data-st="${src}:${g}" ${gc.new ? '' : 'disabled'}>${IC('learn')}<b>Öğren (${gc.new})</b><span>Yeni kelimeleri basamak basamak: tanı, seç, yaz. Bitenler tekrar listene girer.</span></button>
+      <button class="tile" data-stgo="learn" data-st="${src}:${g}" ${gc.new ? '' : 'disabled'}>${IC('learn')}<b>Öğren (${gc.new})</b><span>Yeni kelimeleri basamak basamak: tanımı tanı, kelimeyi seç, kendin yaz. Bitenler tekrar listene girer.</span></button>
       <button class="tile" data-sact="discover" data-st="${u}-${g}" ${gc.new ? '' : 'disabled'}>${IC('plus')}<b>Hızlı keşif (${gc.new})</b><span>Kartı gör, biliyorsan geç; bilmiyorsan listene ekle.</span></button>
-      <button class="tile" data-sact="match" data-st="${u}-${g}">${IC('match')}<b>Eşleştir</b><span>Listedeki gibi: ${N} kelime, ${N} tanım.</span></button>
-      <button class="tile" data-sact="test" data-st="${u}-${g}">${IC('target')}<b>Durak testi</b><span>${N} kelimenin hepsinden karışık sorular.</span></button>
+      <button class="tile" data-sact="match" data-st="${u}-${g}">${IC('match')}<b>Eşleştir</b><span>Listedeki gibi: ${N} kelime, ${N} karşılık. İstersen Fransızca tanımlarla.</span></button>
+      <button class="tile" data-sact="test" data-st="${u}-${g}">${IC('target')}<b>Durak testi</b><span>${N} kelimenin hepsinden tanım, eş ve zıt anlam soruları.</span></button>
       <button class="tile" data-sact="review" data-st="${u}-${g}" ${due.length ? '' : 'disabled'}>${IC('review')}<b>Vadesi gelenler (${due.length})</b><span>Bu duraktaki tekrarları şimdi yap.</span></button>
       <button class="tile" data-stopen="${src}" data-g="${g}">${IC('studio')}<b>Stüdyo'da çalış</b><span>Bu durağı 17 moddan biriyle çalış: kartlar, Relevez, oyunlar…</span></button>
     </div>
@@ -818,6 +903,7 @@ function openSettings() {
   openSheet(`${sheetHead('<span lang="fr">Réglages</span>', 'Ayarlar')}
     <div class="set-row"><div><div class="t">Görünüm</div><div class="d">Gece modu, sabah erken ya da akşam çalışırken gözü yormaz.</div></div>${seg('night', S.p.night ? 1 : 0, [[0, 'Gündüz'], [1, 'Gece']])}</div>
     <div class="set-row"><div><div class="t">Yazı boyutu</div><div class="d">Bütün metinleri birlikte büyütür.</div></div>${seg('fs', S.p.fs, [[1, 'A'], [1.12, 'A+'], [1.25, 'A++']])}</div>
+    <div class="set-row"><div><div class="t">Türkçe destek</div><div class="d">Öğrenme Fransızca–Fransızca: tanım, eş ve zıt anlamlılar. Türkçe anlam ve cümle çevirisi yalnızca destek olarak; gizliyken de kartlarda “Türkçesini göster” ile açılır.</div></div>${seg('trs', trMode(), [['off', 'Gizli'], ['after', 'Cevaptan sonra'], ['always', 'Her zaman']])}</div>
     <div class="set-row"><div><div class="t">Günlük yeni kelime hedefi</div><div class="d">Öğren ve Keşfet ile listene eklediğin kelimeler sayılır.</div></div>${seg('goal', S.p.goal, [[5, '5'], [10, '10'], [15, '15'], [20, '20'], [30, '30']])}</div>
     <div class="set-row"><div><div class="t">1. Yazılı tarihi</div><div class="d">Geri sayım ve günlük tempo önerisi için.</div></div><input type="date" class="date-in" id="setExamDate" value="${esc(S.p.examDate || '')}" aria-label="Sınav tarihi"></div>
     <div class="set-row"><div><div class="t">Açılış animasyonu</div><div class="d">Uygulama açılırken metro kapıları açılır.</div></div>${seg('intro', S.p.intro, [['day', 'Günde bir'], ['always', 'Her açılışta'], ['off', 'Kapalı']])}</div>
@@ -827,7 +913,7 @@ function openSettings() {
     <div class="set-row"><div><div class="t">Ses efektleri</div><div class="d">Doğru ve yanlış cevapta kısa bir ton.</div></div>${tog('sfx', S.p.sfx, 'Ses efektleri')}</div>
     <div class="set-row"><div><div class="t">Kayıt</div><div class="d">${SYNC.mode === 'cloud' ? 'İlerlemen hesabına kaydediliyor; tablet, telefon ve bilgisayarda aynı kalır.' : 'İlerlemen bu tarayıcıda tutuluyor. Tarayıcı verilerini silersen ilerleme de silinir.'}</div></div><span class="sync ${SYNC.mode === 'cloud' ? 'cloud' : ''}"></span></div>
     ${STANDALONE ? '' : `<div class="set-row"><div><div class="t">Uygulama olarak yükle</div><div class="d">Ana ekranına ikon olarak ekler; tam ekran ve çevrimdışı çalışır.</div></div><button class="btn sm" data-install>Yükle</button></div>`}
-    <div class="set-row"><div><div class="t">Liste düzeltmeleri</div><div class="d">Kitaptaki ve yazılı listesindeki hatalardan düzelttiğim ${Object.keys(ALL_FIXES).length} madde.</div></div><button class="btn ghost sm" data-info="fixes">Listeyi gör</button></div>
+    <div class="set-row"><div><div class="t">Liste düzeltmeleri</div><div class="d">Kaynak listelerdeki hatalardan düzeltilen ${Object.keys(ALL_FIXES).length} madde (1. Yazılı, Thème 1, Thème 2).</div></div><button class="btn ghost sm" data-info="fixes">Listeyi gör</button></div>
     <div class="set-row"><div><div class="t">Nasıl çalışır?</div><div class="d">Tekrar sistemi ve Stüdyo modlarının bilimsel dayanağı.</div></div><button class="btn ghost sm" data-info="how">Açıklama</button></div>
     <div class="danger" id="dangerZone"><div class="row"><div style="flex:1;min-width:200px"><div class="t" style="font-weight:800">İlerlemeyi sıfırla</div><div class="d faint" style="font-size:.86rem">Bütün kelime durumları, notlar, XP, seri ve rekorlar silinir.</div></div><button class="btn sm no" data-reset1>Sıfırla…</button></div></div>`);
   const di = $('#setExamDate'); if (di) di.onchange = () => { S.p.examDate = di.value || ''; touch(); refreshUnder(); toast(di.value ? 'Sınav tarihi kaydedildi' : 'Sınav tarihi kaldırıldı'); };
@@ -835,11 +921,10 @@ function openSettings() {
 function openInfo(kind) {
   if (kind === 'fixes') {
     const row = id => { const w = BYID[id]; return `<button class="wl u${w.u}" data-word="${id}"><span class="fr"><span lang="fr">${esc(w.fr)}</span><span class="faint" style="font-weight:700"> · ${id}</span></span><span class="tr" style="font-size:.9rem">${esc(ALL_FIXES[id])}</span><i class="dot ${status(id)}"></i></button>`; };
-    const y = Object.keys(ALL_FIXES).filter(id => BYID[id] && BYID[id].u === 5), t = Object.keys(ALL_FIXES).filter(id => BYID[id] && BYID[id].u !== 5);
+    const by = dk => Object.keys(ALL_FIXES).filter(id => BYID[id] && BYID[id].deck === dk).sort((a, b) => BYID[a].i - BYID[b].i);
     openSheet(`${sheetHead('Kaynakla karşılaştırma', 'Liste düzeltmeleri')}
-      <p class="muted" style="margin-bottom:10px">Kaynaklarda bazı terimler yanlış basılmış ya da eşleşmeler kaymış. Uygulamada doğrusu kullanılıyor; her maddeye dokunarak ayrıntısını görebilirsin. Yazılı listesindeki düzeltmelerde, sınavda öğretmeninin listesindeki hâlin sorulabileceğini unutma.</p>
-      <h3 class="sheet-sub">1. Yazılı listesi (${y.length})</h3><div class="wlist">${y.map(row).join('')}</div>
-      <h3 class="sheet-sub">Thème 1 kitabı (${t.length})</h3><div class="wlist">${t.map(row).join('')}</div>`);
+      <p class="muted" style="margin-bottom:10px">Kaynaklarda bazı terimler yanlış basılmış ya da eşleşmeler kaymış. Uygulamada doğrusu kullanılıyor; her maddeye dokunarak ayrıntısını görebilirsin. Sınavda öğretmeninin listesindeki hâlin sorulabileceğini unutma; kelime kartında listedeki eşleşme ayrıca yazıyor.</p>
+      ${DECK_ORDER.map(dk => { const ids = by(dk); return ids.length ? `<h3 class="sheet-sub">${esc(DECKS[dk].long)} (${ids.length})</h3><div class="wlist">${ids.map(row).join('')}</div>` : ''; }).join('')}`);
     return;
   }
   if (kind === 'levels') {
@@ -849,10 +934,12 @@ function openInfo(kind) {
   }
   openSheet(`${sheetHead('WordUp mantığı + Stüdyo', 'Nasıl çalışır?')}
     <div class="stack">
-      <p><b>Öğren ya da keşfet.</b> 1. Yazılı listesi 12 durağa, Thème 1 kitabı 163 durağa bölünmüş. Öğren modu her kelimeyi üç basamaktan geçirir: anlamı tanı, Fransızcasını seç, kendin yaz. Hızlı keşifte ise kartı görür, biliyorsan geçersin.</p>
+      <p><b>Üç ayrı deste.</b> 1. Yazılı (129 kelime, 12 durak), Thème 1 · Identités (1793 kelime, 163 durak) ve Thème 2 · Expériences (1584 kelime, 144 durak) ayrı sekmelerde. Tekrar, keşif, test, sınav maratonu ve Stüdyo setleri her zaman tek bir desteden gelir; çoktan seçmeli sorulardaki yanlış seçenekler bile aynı desteden seçilir.</p>
+      <p><b>Fransızca–Fransızca.</b> Her kelimenin Fransızca tanımı (déf.), eş anlamlıları (syn.) ve zıt anlamlıları (ant.) birlikte öğrenilir. Kalın yazılanlar öğretmeninin listesindeki eşleşmedir ve hep önce gelir; ≠ işaretli maddelerde listedeki ifade zıt anlamlıdır. Türkçe yalnızca destek: Ayarlar → Türkçe destek ile gizleyebilir, cevaptan sonra ya da her zaman gösterebilirsin.</p>
+      <p><b>Öğren ya da keşfet.</b> Öğren modu her kelimeyi üç basamaktan geçirir: kelimeyi görüp tanımını ya da listedeki eşini tanı, tanımdan veya eş/zıt anlamlıdan kelimeyi seç, en son tanımdan kendin yaz. Hızlı keşifte kartı görür, biliyorsan geçersin.</p>
       <p><b>Tekrar et.</b> Listendeki her kelime beş kez, giderek uzayan aralıklarla geri gelir: 1 gün, 3 gün, 1 hafta, 2 hafta ve 1 ay. Unutmanın başladığı ana denk gelen tekrar, hafızayı en çok güçlendiren tekrardır.</p>
-      <p><b>Soru tipleri basamakla zorlaşır.</b> İlk tekrarda Fransızcadan Türkçeye anlam, sonra Türkçeden Fransızcaya ve tanımdan kelimeyi bulma, ardından örnek cümlede boşluk doldurma, en son kelimeyi kendin yazma.</p>
-      <p><b>Stüdyo neden var?</b> Araştırmalar üç şeyi tekrar tekrar gösteriyor: hatırlamaya çalışmak (seçenek görmeden) okumaktan çok daha kalıcıdır; tekrarları zamana yaymak hepsini bir oturuma sıkıştırmaktan iyidir; kelimeyi farklı yönlerden çalışmak (tanıma, yazma, cümlede bulma, kendi cümleni kurma) farklı bilgileri güçlendirir. Kelimeyi seçenekten tanımak anlamı, kendin yazmak yazımı oturtur. Kendi cümleni ya da çağrışımını üretmek de hatırlamayı belirgin biçimde artırır.</p>
+      <p><b>Soru tipleri basamakla zorlaşır.</b> İlk tekrarda listedeki eşi ve tanımı tanıma; sonra tanımdan, eş anlamlıdan ya da zıt anlamlıdan kelimeyi bulma; ardından kelimenin eş ve zıt anlamlısını seçme (zıt anlam sorularında eş anlamlı bir tuzak seçenek olabilir) ve cümlede boşluk doldurma; en son kelimeyi tanımdan kendin yazma.</p>
+      <p><b>Stüdyo neden var?</b> Hatırlamaya çalışmak (seçenek görmeden) okumaktan çok daha kalıcıdır; tekrarları zamana yaymak hepsini bir oturuma sıkıştırmaktan iyidir; kelimeyi farklı yönlerden çalışmak farklı bilgileri güçlendirir. Kendi cümleni ya da çağrışımını üretmek de hatırlamayı belirgin biçimde artırır.</p>
       <p><b>Ustalaşmak.</b> Beş tekrarın hepsini doğru bilen kelime ustalaşılmış sayılır. Her doğru cevap XP kazandırır; XP biriktikçe Paris'in 20. bölgesinden başlayıp Louvre'a, yani 1. bölgeye doğru ilerlersin.</p>
     </div>`);
 }
@@ -906,16 +993,27 @@ function applyPrefs() {
   const tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.content = S.p.night ? '#0C142D' : '#1C3984';
 }
 function goalLeftN() { const left = Math.max(0, S.p.goal - today()[1]); return left > 0 ? left : 10; }
+/* eylemler: 'review:th2', 'discover:th1', 'learn:y1', 'hard:th2', 'free:th1', 'dline:6', 'rline:3' — hep tek deste */
 function runAction(a) {
-  if (a === 'review') { const d = dueList(); if (d.length) startReview(d); else show('review'); }
-  else if (a === 'review-y1') startReview(dueList().filter(w => w.u === 5), 'Tekrar · 1. Yazılı');
-  else if (a === 'discover-next' || a === 'th1-discover') discoverNext(goalLeftN(), UNIT_IDS);
-  else if (a === 'y1-discover') discoverNext(goalLeftN(), [5]);
-  else if (a === 'y1-learn') { const ns = nextStation(5, [5]); if (ns) stLaunch('learn', { set: { src: 'y1', g: ns.g, order: 'book' }, only: 'new', size: 0 }); else stLaunch('test', { set: { src: 'y1', g: 0 } }); }
-  else if (a === 'discover-line') { const u = S.p.plan || 1; const ws = UNIT_WORDS[u].filter(w => status(w.id) === 'new').slice(0, Math.max(5, S.p.goal - today()[1]) || 10); startDiscover(ws, 'Keşif · ' + lineName(u), [u]); }
-  else if (a === 'review-line') { const u = S.p.plan || 1; startReview(dueList().filter(w => w.u === u), 'Tekrar · ' + lineName(u)); }
-  else if (a === 'practice-hard') startPractice(W.filter(w => isHard(w.id)), 'Zorlu kelimeler', 20, true);
-  else if (a === 'practice-learning') startPractice(W.filter(w => ['learn', 'master'].includes(status(w.id))), 'Serbest pratik', 20, true);
+  const legacy = { 'review-y1': 'review:y1', 'th1-discover': 'discover:th1', 'discover-next': 'discover:th1', 'y1-discover': 'discover:y1', 'y1-learn': 'learn:y1',
+    'practice-hard': 'hard:' + curDeck(), 'practice-learning': 'free:' + curDeck(), 'discover-line': 'dline:' + deckLine(curDeck() === 'y1' ? 'th1' : curDeck()), 'review-line': 'rline:' + deckLine(curDeck() === 'y1' ? 'th1' : curDeck()) };
+  if (legacy[a]) { runAction(legacy[a]); return; }
+  const [k, arg] = a.split(':'), dk = DECKS[arg] ? arg : null;
+  if (k === 'review') {
+    if (dk) { const d = dueList(null, dk); if (d.length) startReview(d, 'Tekrar · ' + DECKS[dk].name); else toast(DECKS[dk].name + ': şu an vadesi gelen kelime yok'); return; }
+    const ds = DECK_ORDER.filter(d => dueList(null, d).length);
+    if (ds.length === 1) runAction('review:' + ds[0]); else show('review');
+  }
+  else if (k === 'discover') { const d = dk || curDeck(); discoverNext(goalLeftN(), DECKS[d].units); }
+  else if (k === 'learn') {
+    const d = dk || curDeck(), ns = nextStation(d === 'y1' ? 5 : deckLine(d), DECKS[d].units);
+    if (ns) stLaunch('learn', { set: { deck: d, src: d === 'y1' ? 'all' : 'u' + ns.u, g: ns.g, order: 'book' }, only: 'new', size: 0 });
+    else stLaunch('test', { set: { deck: d, src: 'all', g: 0 } });
+  }
+  else if (k === 'hard') { const d = dk || curDeck(); startPractice(DECK_WORDS[d].filter(w => isHard(w.id)), 'Zorlu · ' + DECKS[d].name, 20, true); }
+  else if (k === 'free') { const d = dk || curDeck(); startPractice(DECK_WORDS[d].filter(w => ['learn', 'master'].includes(status(w.id))), 'Serbest pratik · ' + DECKS[d].name, 20, true); }
+  else if (k === 'dline') { const u = +arg; if (!UNIT_WORDS[u]) return; const ws = UNIT_WORDS[u].filter(w => status(w.id) === 'new').slice(0, Math.max(5, S.p.goal - today()[1]) || 10); startDiscover(ws, 'Keşif · ' + DECKS[deckOf(u)].name + ' · ' + lineName(u), [u]); }
+  else if (k === 'rline') { const u = +arg; if (!UNIT_WORDS[u]) return; startReview(dueList(null, deckOf(u)).filter(w => w.u === u), 'Tekrar · ' + DECKS[deckOf(u)].name + ' · ' + lineName(u)); }
 }
 function insertAccent(ch, btn) {
   const box = btn && btn.closest('.accents');
@@ -941,8 +1039,8 @@ function bind() {
     if ('close' in d) { closeSheet(); return; }
     if (d.run) { closeSheet(); runAction(d.run); return; }
     if (d.info) { openInfo(d.info); return; }
-    if (d.plan) { S.p.plan = +d.plan; touch(); show('plan'); return; }
-    if (d.station) { const [u, g] = d.station.split('-').map(Number); if (VIEW !== 'plan' && VIEW !== 'match') { S.p.plan = u; } openStation(u, g); return; }
+    if (d.plan) { const u = +d.plan, dk = deckOf(u); if (dk !== 'y1') { S.p.pl[dk] = u; touch(); } if (VIEW === dk) { renderDeck(dk); const lc = $('#lineCard-' + dk); if (lc && lc.getBoundingClientRect().top > innerHeight * 0.6) lc.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'start' }); } else show(dk === 'y1' ? 'yazili' : dk); return; }
+    if (d.station) { const [u, g] = d.station.split('-').map(Number), dk = deckOf(u); if (dk !== 'y1' && VIEW !== dk && VIEW !== 'match') S.p.pl[dk] = u; openStation(u, g); return; }
     if (d.word) { openWord(d.word); return; }
     if (d.say) { const w = BYID[d.id] || (SES && SES.q && SES.q.w) || (SES && curItem().w); if (w) speak(d.say === 'ex' ? exPlain(w.ex) : speechText(w.fr), t); return; }
     if (d.dec) { decide(d.dec); return; }
@@ -954,16 +1052,17 @@ function bind() {
     if ('hint' in d) { const h = $('#hint'); if (h) h.hidden = false; t.hidden = true; return; }
     if ('endsess' in d) { if (SES && SES.total + SES.learned.length + SES.known.length > 0) endSession(); else { SES = null; show(PREV || 'home'); } return; }
     if (d.size !== undefined) { S.p.sessSize = +d.size; touch(); renderReview(); return; }
-    if (d.exam) { closeSheet(); const u = +d.exam; startPractice(UNIT_WORDS[u], 'Hat testi · ' + lineName(u), 25); return; }
+    if (d.exam) { closeSheet(); const u = +d.exam; startPractice(UNIT_WORDS[u], 'Hat testi · ' + DECKS[deckOf(u)].name + ' · ' + lineName(u), 25); return; }
+    if (d.lexd !== undefined) { LEX.d = d.lexd; LEX.u = 0; LEX.lim = 120; renderLex(); return; }
     if (d.lexu !== undefined) { LEX.u = +d.lexu; LEX.lim = 120; renderLex(); return; }
     if (d.lexs) { LEX.s = d.lexs; LEX.lim = 120; renderLex(); return; }
     if ('lexmore' in d) { LEX.lim += 200; renderLexList(); return; }
     if (d.sact) {
       const [u, g] = d.st.split('-').map(Number), ws = GROUPS[u + '-' + g]; closeSheet();
-      if (d.sact === 'discover') startDiscover(ws.filter(w => status(w.id) === 'new'), 'Keşif · Durak ' + g, [u]);
+      if (d.sact === 'discover') startDiscover(ws.filter(w => status(w.id) === 'new'), 'Keşif · ' + DECKS[deckOf(u)].name + ' · Durak ' + g, [u]);
       else if (d.sact === 'match') startMatch(u, g);
-      else if (d.sact === 'test') startPractice(ws, 'Durak testi · ' + g, ws.length);
-      else if (d.sact === 'review') startReview(ws.filter(w => isDue(w.id)), 'Tekrar · Durak ' + g);
+      else if (d.sact === 'test') startPractice(ws, 'Durak testi · ' + DECKS[deckOf(u)].name + ' · ' + g, ws.length);
+      else if (d.sact === 'review') startReview(ws.filter(w => isDue(w.id)), 'Tekrar · ' + DECKS[deckOf(u)].name + ' · Durak ' + g);
       return;
     }
     if (d.ml) { matchLeft(d.ml); return; }
@@ -981,7 +1080,7 @@ function bind() {
     if (d.fav) { if (S.f[d.fav]) delete S.f[d.fav]; else S.f[d.fav] = 1; touch(); openWord(d.fav); refreshUnder(); return; }
     if (d.set) {
       const v = d.val;
-      if (d.set === 'night') S.p.night = v === '1'; else if (d.set === 'fs') S.p.fs = +v; else if (d.set === 'goal') S.p.goal = +v; else if (d.set === 'rate') S.p.rate = +v; else if (d.set === 'intro') S.p.intro = v;
+      if (d.set === 'night') S.p.night = v === '1'; else if (d.set === 'fs') S.p.fs = +v; else if (d.set === 'goal') S.p.goal = +v; else if (d.set === 'rate') S.p.rate = +v; else if (d.set === 'intro') S.p.intro = v; else if (d.set === 'trs') S.p.trs = v;
       touch(); applyPrefs(); openSettings(); refreshUnder(); return;
     }
     if (d.tog) { S.p[d.tog] = !S.p[d.tog]; touch(); openSettings(); if (d.tog === 'sfx' && S.p.sfx) sfx('ok'); if (d.tog === 'haptic' && S.p.haptic) haptic('ok'); return; }
@@ -1009,7 +1108,7 @@ function bind() {
     if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.classList && e.target.classList.contains('st-hit')) { e.preventDefault(); const [u, g] = e.target.dataset.station.split('-').map(Number); openStation(u, g); }
   });
   $('#sheetBg').addEventListener('click', e => { if (e.target.id === 'sheetBg') closeSheet(); });
-  let rz = 0; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (VIEW === 'plan') drawMap(); moveInd(); }, 160); });
+  let rz = 0; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (VIEW === 'th1' || VIEW === 'th2') drawMap(); moveInd(); }, 160); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); else if (!SES && !MT_TIMER && VIEW !== 'play' && VIEW !== 'examrun') refreshRemote(rerender); });
   window.addEventListener('pagehide', () => flush());
   setInterval(() => { const c = $('#boardClock'); if (c) { const d = new Date(); c.textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); } }, 15000);
@@ -1033,8 +1132,8 @@ function boot() {
   const loc = loadLocal(); if (loc) S = normalizeState(loc);
   applyPrefs(); bind(); setSync('local');
   const h = (location.hash || '').slice(1);
-  show(['plan', 'review', 'lex', 'exam', 'yazili', 'studio'].includes(h) ? h : 'home', { instant: true });
-  const ny = nextStation(5, [5]);
-  maybeIntro(ny ? stationName(5, ny.g) : 'Métro des Mots');
+  show(['plan', 'review', 'lex', 'exam', 'yazili', 'studio', 'th1', 'th2'].includes(h) ? h : 'home', { instant: true });
+  const dk = curDeck(), ny = nextStation(dk === 'y1' ? 5 : deckLine(dk), DECKS[dk].units);
+  maybeIntro(ny ? stationName(ny.u, ny.g) : 'Métro des Mots');
   initRemote(() => { if (!SES && !MT_TIMER && VIEW !== 'play' && VIEW !== 'examrun') rerender(); });
 }

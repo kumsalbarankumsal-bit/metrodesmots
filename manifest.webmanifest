@@ -1,7 +1,7 @@
 {
   "name": "Métro des Mots",
   "short_name": "Métro Mots",
-  "description": "IB Français B — 1. Yazılı (129 kelime) ve Thème 1 Identités (1793 kelime): WordUp usulü aralıklı tekrar, 17 çalışma modu.",
+  "description": "IB Français B — 1. Yazılı (129 kelime), Thème 1 Identités (1793 kelime) ve Thème 2 Expériences (1584 kelime): Fransızca–Fransızca tanım, eş ve zıt anlamlılar, WordUp usulü aralıklı tekrar, 17 çalışma modu.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
@@ -47,6 +47,26 @@
   ],
   "shortcuts": [
     {
+      "name": "Thème 2",
+      "url": "/#th2",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Thème 1",
+      "url": "/#th1",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
       "name": "1. Yazılı",
       "url": "/#yazili",
       "icons": [
@@ -57,28 +77,8 @@
       ]
     },
     {
-      "name": "Stüdyo",
-      "url": "/#studio",
-      "icons": [
-        {
-          "src": "/icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
       "name": "Tekrar",
       "url": "/#review",
-      "icons": [
-        {
-          "src": "/icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Sözlük",
-      "url": "/#lex",
       "icons": [
         {
           "src": "/icons/icon-192.png",

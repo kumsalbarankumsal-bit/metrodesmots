@@ -12,15 +12,17 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Métro Mots">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="description" content="IB Français B — 1. Yazılı (129 kelime) ve Thème 1 Identités (1793 kelime): WordUp usulü aralıklı tekrar ve 17 çalışma modu.">
+<meta name="description" content="IB Français B — 1. Yazılı (129 kelime), Thème 1 Identités (1793 kelime) ve Thème 2 Expériences (1584 kelime): Fransızca–Fransızca tanım, eş ve zıt anlamlılar, WordUp usulü aralıklı tekrar ve 17 çalışma modu.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:ital,wght@0,200..800;1,200..800&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&display=swap">
-<link rel="stylesheet" href="/styles.css?v=6">
+<link rel="stylesheet" href="/styles.css?v=7">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-t1" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M10.4 9.1 12.7 7.6V16.6"/></symbol>
+  <symbol id="i-t2" viewBox="0 0 24 24"><rect x="3.4" y="3.4" width="17.2" height="17.2" rx="5"/><path d="M9.4 9.7a2.7 2.7 0 1 1 4.8 1.7L9.3 16.6h5.6"/></symbol>
   <symbol id="i-map" viewBox="0 0 24 24"><path d="M5 19c3 0 3-7 7-7s4-7 7-7"/><circle cx="5" cy="19" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="5" r="2.2"/></symbol>
   <symbol id="i-review" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19"/><path d="M9 7.5h6"/></symbol>
@@ -67,10 +69,11 @@
     <button class="plaque" id="brand" aria-label="Ana sayfa"><small lang="fr">IB Français B</small><b>Métro des Mots</b></button>
     <nav class="nav" aria-label="Bölümler">
       <i class="nav-ind" aria-hidden="true"></i>
-      <button data-go="home" aria-current="page"><svg class="ic sm"><use href="#i-home"/></svg>Ana sayfa <span class="badge" data-due hidden>0</span></button>
-      <button data-go="yazili"><svg class="ic sm"><use href="#i-exam"/></svg>1. Yazılı</button>
+      <button data-go="home" aria-current="page"><svg class="ic sm"><use href="#i-home"/></svg>Ana sayfa</button>
+      <button data-go="yazili"><svg class="ic sm"><use href="#i-exam"/></svg>1. Yazılı <span class="badge" data-due="y1" hidden>0</span></button>
+      <button data-go="th1" class="tb-t1"><svg class="ic sm"><use href="#i-t1"/></svg>Thème 1 <span class="badge" data-due="th1" hidden>0</span></button>
+      <button data-go="th2" class="tb-t2"><svg class="ic sm"><use href="#i-t2"/></svg>Thème 2 <span class="badge" data-due="th2" hidden>0</span></button>
       <button data-go="studio"><svg class="ic sm"><use href="#i-studio"/></svg>Stüdyo</button>
-      <button data-go="plan"><svg class="ic sm"><use href="#i-map"/></svg>Harita</button>
       <button data-go="lex"><svg class="ic sm"><use href="#i-book"/></svg>Sözlük</button>
     </nav>
     <div class="top-tools">
@@ -84,8 +87,9 @@
 <main class="wrap" id="main">
   <section class="view" id="v-home" aria-label="Ana sayfa"></section>
   <section class="view" id="v-yazili" aria-label="1. Yazılı" hidden></section>
+  <section class="view" id="v-th1" aria-label="Thème 1 · Identités" hidden></section>
+  <section class="view" id="v-th2" aria-label="Thème 2 · Expériences" hidden></section>
   <section class="view" id="v-studio" aria-label="Stüdyo" hidden></section>
-  <section class="view" id="v-plan" aria-label="Hat haritası" hidden></section>
   <section class="view" id="v-review" aria-label="Tekrar" hidden></section>
   <section class="view" id="v-lex" aria-label="Sözlük" hidden></section>
   <section class="view" id="v-exam" aria-label="Sınav maratonu" hidden></section>
@@ -95,28 +99,31 @@
   <section class="view" id="v-examrun" aria-label="Sınav" hidden></section>
   <section class="view" id="v-play" aria-label="Stüdyo modu" hidden></section>
 </main>
-<footer class="foot"><span>1. Yazılı · 129 kelime · 12 durak — Thème 1 · Identités · 1793 kelime · 163 durak</span><span><span class="sync" id="syncDot"></span> <span id="syncTxt">Kayıt hazırlanıyor</span></span></footer>
+<footer class="foot"><span>1. Yazılı · 129 kelime — Thème 1 · Identités · 1793 kelime — Thème 2 · Expériences · 1584 kelime · Fransızca–Fransızca</span><span><span class="sync" id="syncDot"></span> <span id="syncTxt">Kayıt hazırlanıyor</span></span></footer>
 
 <nav class="tabbar" aria-label="Bölümler">
   <i class="tab-ind" aria-hidden="true"></i>
-  <button data-go="home" aria-current="page"><svg class="ic"><use href="#i-home"/></svg>Ana sayfa<span class="badge" data-due hidden>0</span></button>
-  <button data-go="yazili"><svg class="ic"><use href="#i-exam"/></svg>1. Yazılı</button>
+  <button data-go="home" aria-current="page"><svg class="ic"><use href="#i-home"/></svg>Ana sayfa</button>
+  <button data-go="yazili"><svg class="ic"><use href="#i-exam"/></svg>1. Yazılı<span class="badge" data-due="y1" hidden>0</span></button>
+  <button data-go="th1" class="tb-t1"><svg class="ic"><use href="#i-t1"/></svg>Thème 1<span class="badge" data-due="th1" hidden>0</span></button>
+  <button data-go="th2" class="tb-t2"><svg class="ic"><use href="#i-t2"/></svg>Thème 2<span class="badge" data-due="th2" hidden>0</span></button>
   <button data-go="studio"><svg class="ic"><use href="#i-studio"/></svg>Stüdyo</button>
-  <button data-go="plan"><svg class="ic"><use href="#i-map"/></svg>Harita</button>
   <button data-go="lex"><svg class="ic"><use href="#i-book"/></svg>Sözlük</button>
 </nav>
 
 <div class="sheet-bg" id="sheetBg" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <canvas id="confetti" aria-hidden="true"></canvas>
-<script src="/js/data.js?v=6"></script>
-<script src="/js/data-y1.js?v=6"></script>
-<script src="/js/core.js?v=6"></script>
-<script src="/js/fx.js?v=6"></script>
-<script src="/js/ui.js?v=6"></script>
-<script src="/js/exam.js?v=6"></script>
-<script src="/js/yazili.js?v=6"></script>
-<script src="/js/studio.js?v=6"></script>
+<script src="/js/data.js?v=7"></script>
+<script src="/js/data-y1.js?v=7"></script>
+<script src="/js/data-t2.js?v=7"></script>
+<script src="/js/data-fr.js?v=7"></script>
+<script src="/js/core.js?v=7"></script>
+<script src="/js/fx.js?v=7"></script>
+<script src="/js/ui.js?v=7"></script>
+<script src="/js/exam.js?v=7"></script>
+<script src="/js/yazili.js?v=7"></script>
+<script src="/js/studio.js?v=7"></script>
 <script>
 boot();
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));

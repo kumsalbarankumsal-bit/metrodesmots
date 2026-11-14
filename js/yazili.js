@@ -47,7 +47,7 @@ function renderYazili() {
         <span class="ys-n tnum">${gseen}/${gc.total}</span>${IC('chev', 'sm ys-chev')}
       </summary>
       <div class="ys-body">
-        <div class="ys-words">${gw.map(w => `<button class="ywl" data-word="${w.id}"><i class="dot ${status(w.id)}"></i><span class="fr" lang="fr">${esc(w.fr)}</span><span class="tr">${esc(w.trMain)}</span></button>`).join('')}</div>
+        <div class="ys-words">${gw.map(w => `<button class="ywl" data-word="${w.id}"><i class="dot ${status(w.id)}"></i><span class="fr" lang="fr">${esc(w.fr)}</span><span class="tr" lang="fr">${esc(gloss(w))}</span></button>`).join('')}</div>
         <div class="row ys-acts">
           ${gc.new ? `<button class="btn sm uc" data-stgo="learn" data-st="y1:${g}">${IC('learn', 'sm')}Öğren (${gc.new})</button>` : ''}
           <button class="btn sm ghost" data-sact="match" data-st="5-${g}">${IC('match', 'sm')}Eşleştir</button>
@@ -76,9 +76,9 @@ function renderYazili() {
       <div class="yz-acts">
         ${ns ? `<button class="yact main" data-stgo="learn" data-st="y1:${ns.g}">${IC('learn')}<span><b>${seen ? 'Öğrenmeye devam' : 'Öğrenmeye başla'}</b><small>Durak ${ns.g} · ${esc(stationName(5, ns.g))} · ${GROUPS['5-' + ns.g].filter(w => status(w.id) === 'new').length} yeni kelime</small></span>${IC('arrow')}</button>`
               : `<button class="yact main" data-stmode="test" data-stset="y1">${IC('test')}<span><b>Sınav provası</b><small>Liste bitti; 129 kelimeden karışık, notlu test</small></span></button>`}
-        <button class="yact" data-run="review-y1" ${due ? '' : 'disabled'}>${IC('review')}<span><b>Tekrar${due ? ` (${due})` : ''}</b><small>${due ? 'vadesi gelenler' : 'şu an yok'}</small></span></button>
+        <button class="yact" data-run="review:y1" ${due ? '' : 'disabled'}>${IC('review')}<span><b>Tekrar${due ? ` (${due})` : ''}</b><small>${due ? 'vadesi gelenler, yalnız bu liste' : 'şu an yok'}</small></span></button>
         <button class="yact" data-yz="exam">${IC('target')}<span><b>${exOn ? 'Maratona devam' : 'Maraton'}</b><small>${exOn ? `${E.pos}/${E.ids.length} · kaldığın yerden` : 'hepsi, durmadan'}</small></span></button>
-        <button class="yact" data-stmode="test" data-stset="y1">${IC('test')}<span><b>Test</b><small>sınav provası</small></span></button>
+        <button class="yact" data-stmode="test" data-stset="y1">${IC('test')}<span><b>Test</b><small>tanım, eş ve zıt anlamlı karışık</small></span></button>
         <button class="yact" data-stmode="relevez" data-stset="y1">${IC('mark')}<span><b>Relevez</b><small>Paper 2 tarzı</small></span></button>
         <button class="yact" data-stmode="cards" data-stset="y1">${IC('cards')}<span><b>Kartlar</b><small>hızlı ayıklama</small></span></button>
         <button class="yact" data-stopen="y1">${IC('studio')}<span><b>Stüdyo</b><small>17 modun hepsi</small></span></button>

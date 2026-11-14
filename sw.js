@@ -1,7 +1,7 @@
 /* Métro des Mots — service worker: çevrimdışı çalışma + yüklenebilirlik */
-const VERSION = 'mdm-v6';
-const SHELL = ['/', '/index.html', '/styles.css?v=6', '/js/data.js?v=6', '/js/data-y1.js?v=6', '/js/core.js?v=6', '/js/fx.js?v=6', '/js/ui.js?v=6',
-  '/js/exam.js?v=6', '/js/yazili.js?v=6', '/js/studio.js?v=6', '/manifest.webmanifest',
+const VERSION = 'mdm-v7';
+const SHELL = ['/', '/index.html', '/styles.css?v=7', '/js/data.js?v=7', '/js/data-y1.js?v=7', '/js/data-t2.js?v=7', '/js/data-fr.js?v=7', '/js/core.js?v=7', '/js/fx.js?v=7', '/js/ui.js?v=7',
+  '/js/exam.js?v=7', '/js/yazili.js?v=7', '/js/studio.js?v=7', '/manifest.webmanifest',
   '/icons/icon-192.png', '/icons/icon-512.png', '/icons/maskable-192.png', '/icons/maskable-512.png', '/icons/apple-touch-icon.png', '/icons/favicon-32.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
